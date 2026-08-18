@@ -1,0 +1,22 @@
+# Build output
+Builds/*/build/
+*.xcuserdatad/
+*.xcworkspace/xcuserdata/
+UserInterfaceState.xcuserstate
+
+# JUCE generated
+JuceLibraryCode/
+
+# Python harness
+.venv/
+__pycache__/
+*.pyc
+
+# Audio - large working files, not source
+*.wav
+
+# Personal documents - never belongs in a code repo
+*.pdf
+
+# macOS
+.DS_Store
