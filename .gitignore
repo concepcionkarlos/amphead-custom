@@ -18,5 +18,11 @@ __pycache__/
 # Personal documents - never belongs in a code repo
 *.pdf
 
+# Local tooling config - personal setup, not part of the product
+.claude/
+.codex/
+.remember/
+.sf/
+
 # macOS
 .DS_Store
