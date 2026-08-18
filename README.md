@@ -1,5 +1,7 @@
 # AmpHead Custom
 
+[![Build](https://github.com/concepcionkarlos/amphead-custom/actions/workflows/build.yml/badge.svg)](https://github.com/concepcionkarlos/amphead-custom/actions/workflows/build.yml)
+
 A three-channel guitar amplifier head, written in C++ with JUCE. VST3 / AU / standalone.
 
 The interesting part of this project is not the amp. It is that the amp is **measured**
@@ -47,6 +49,12 @@ Butterworth anti-imaging and anti-alias filter on each end.
 
 ---
 
+Every push is built on both macOS and Windows by GitHub Actions, so "it builds on Windows"
+is something you can check rather than something I claim. The DSP and the interface contain
+no platform-specific code.
+
+---
+
 ## Measurement harness
 
 `tools/` contains a Python harness that loads the built VST3 through
@@ -88,8 +96,17 @@ The lesson each time: a metric that never moves is broken, not clean.
 
 ## Building
 
-Requires JUCE and Xcode on macOS. `JuceLibraryCode/` is generated, not committed - open
-`CopilotTone.jucer` in Projucer and save it once to regenerate, then build:
+Two ways, and they build the same sources.
+
+**CMake** - cross-platform, no IDE, and what CI uses. JUCE is fetched at a pinned version:
+
+```
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
+
+**Projucer** - the local macOS workflow. `JuceLibraryCode/` is generated, not committed, so
+open `CopilotTone.jucer` in Projucer and save it once first:
 
 ```
 cd Builds/MacOSX

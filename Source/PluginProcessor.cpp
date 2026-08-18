@@ -1658,7 +1658,7 @@ void Delay::process (juce::AudioBuffer<float>& buffer, int numSamples,
 //==============================================================================
 // Reverb
 
-void Reverb::prepare (double sampleRate, int /*maxBlockSize*/)
+void ReverbEngine::prepare (double sampleRate, int /*maxBlockSize*/)
 {
     sr = sampleRate;
     const float ratio = (float) sr / 44100.f;
@@ -1699,7 +1699,7 @@ void Reverb::prepare (double sampleRate, int /*maxBlockSize*/)
     reset();
 }
 
-void Reverb::reset()
+void ReverbEngine::reset()
 {
     if (preBuf.get() != nullptr) preBuf.clear ((size_t) (preMask + 1));
     preWrite = 0;
@@ -1717,7 +1717,7 @@ void Reverb::reset()
 }
 
 // type: 0 = Spring, 1 = Hall, 2 = Room, 3 = Plate.  decay/tone/mix in [0,1].
-void Reverb::process (juce::AudioBuffer<float>& buffer, int numSamples,
+void ReverbEngine::process (juce::AudioBuffer<float>& buffer, int numSamples,
                       int type, float decay, float tone, float mix)
 {
     if (fdn[0].get() == nullptr) return;

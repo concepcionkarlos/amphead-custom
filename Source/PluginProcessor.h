@@ -571,11 +571,11 @@ private:
 };
 
 //==============================================================================
-// Reverb - 4-line feedback delay network (Householder matrix) with input diffusion,
+// ReverbEngine - 4-line feedback delay network (Householder matrix) with input diffusion,
 // per-line damping and modulation, plus a dispersive allpass front-end for Spring.
 // Voices: Spring (the drip), Hall (long, diffuse), Room (short, tight), Plate
 // (dense, bright). Decay sets the RT60, Tone the damping. No allocation in process().
-struct Reverb
+struct ReverbEngine
 {
     void prepare (double sampleRate, int maxBlockSize);
     void process (juce::AudioBuffer<float>& buffer, int numSamples,
@@ -599,7 +599,7 @@ private:
 //==============================================================================
 // Modulation - stereo pitch DETUNE (L up / R down, delay-line shifter with
 // crossfaded taps) plus a slow CHORUS, blended in parallel behind the signal.
-// Sits between Delay and Reverb so the detuned layer is reverberated too.
+// Sits between Delay and ReverbEngine so the detuned layer is reverberated too.
 struct Modulation
 {
     void prepare (double sampleRate, int maxBlockSize);
@@ -723,7 +723,7 @@ private:
     NoiseGate         noiseGate;
     Delay             delay;
     Modulation        modulation;
-    Reverb            reverb;
+    ReverbEngine      reverb;
 
     double currentSampleRate   = 44100.0;
     int    preparedNumChannels = 2;

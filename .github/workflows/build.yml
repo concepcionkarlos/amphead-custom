@@ -1,0 +1,54 @@
+# Builds the plugin on macOS and Windows on every push.
+#
+# The point is not just that it compiles: it is that "works on Windows" stops
+# being a claim and becomes something anyone can verify by looking at the badge.
+# The DSP and the interface are plain JUCE with no platform-specific code, so
+# the same sources build on both.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false          # a Windows failure must not hide a macOS pass
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+          - os: windows-latest
+            name: Windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # JUCE is fetched by CMake, and it is large. Caching it keeps a build
+      # around two minutes instead of ten.
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: juce-8.0.13-${{ runner.os }}
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Collect artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmpHeadCustom-${{ matrix.name }}
+          path: |
+            build/AmpHeadCustom_artefacts/Release/VST3/**
+            build/AmpHeadCustom_artefacts/Release/AU/**
+            build/AmpHeadCustom_artefacts/Release/Standalone/**
+          if-no-files-found: warn
