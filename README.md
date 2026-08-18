@@ -107,6 +107,13 @@ python3 -m venv .venv
 
 ---
 
+## License
+
+None. This repository is published as a portfolio piece: the source is here to be read, not
+reused. All rights reserved.
+
+---
+
 ## Status
 
 Prototype. The amp is voiced and the suite passes, but this is a personal instrument rather
