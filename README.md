@@ -11,6 +11,11 @@ to hear and easy to get wrong.
 
 ---
 
+New to the code? Start with [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - it maps every
+stage to the struct and line that implements it.
+
+---
+
 ## Signal chain
 
 ```
