@@ -1,0 +1,1502 @@
+/*
+  ==============================================================================
+    AmpHead Custom  -  PluginEditor.cpp
+  ==============================================================================
+*/
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+
+//==============================================================================
+// Palette
+namespace CT {
+    // Backgrounds
+    static const juce::Colour bg       { 0xff0e0f14 };
+    static const juce::Colour bg2      { 0xff12141f };
+    static const juce::Colour panelFg  { 0xff1b1e2c };
+    static const juce::Colour panelRim { 0xff343954 };
+    static const juce::Colour inputBg  { 0xff262a3c };
+
+    // Functional accent - purple
+    static const juce::Colour accent   { 0xff7552b8 };
+    static const juce::Colour accentHi { 0xff9b7bff };
+
+    // Brand accent - warm amber (for "Custom" word)
+    static const juce::Colour amber    { 0xffC4863A };
+
+    // Text
+    static const juce::Colour textHi   { 0xffF0F0F8 };
+    static const juce::Colour textMid  { 0xffD0D3DA };
+    static const juce::Colour textLow  { 0xff8890A0 };
+    static const juce::Colour textDim  { 0xff3E4055 };
+
+    static const juce::Colour divider  { 0xff2c3050 };
+
+    // TYPE SCALE. Ratio ~1.22, five steps, nothing below fMicro. Half-pixel
+    // differences build no hierarchy, they only multiply the places to edit.
+    // 11 px is the practical floor for a desktop UI label: smaller than that,
+    // at normal viewing distance, the text is guessed rather than read.
+    static constexpr float fMicro = 11.0f;   // units, readouts, fine print
+    static constexpr float fLabel = 13.0f;   // control and section labels
+    static constexpr float fPanel = 16.0f;   // panel titles
+    static constexpr float fChan  = 22.0f;   // channel / emphasis
+    static constexpr float fBrand = 28.0f;   // brand lockup
+}
+
+//==============================================================================
+// AmpLookAndFeel
+
+AmpLookAndFeel::AmpLookAndFeel()
+{
+    setColour (juce::ResizableWindow::backgroundColourId,         CT::bg);
+    setColour (juce::ComboBox::backgroundColourId,                CT::inputBg);
+    setColour (juce::ComboBox::textColourId,                      CT::textMid);
+    setColour (juce::ComboBox::arrowColourId,                     CT::accent);
+    setColour (juce::ComboBox::outlineColourId,                   CT::divider);
+    setColour (juce::PopupMenu::backgroundColourId,               CT::bg2);
+    setColour (juce::PopupMenu::textColourId,                     CT::textMid);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId,    CT::accent.withAlpha (0.40f));
+    setColour (juce::Label::textColourId,                         CT::textLow);
+    setColour (juce::Slider::textBoxTextColourId,                 CT::textMid);
+    setColour (juce::Slider::textBoxOutlineColourId,              juce::Colours::transparentBlack);
+    setColour (juce::Slider::textBoxBackgroundColourId,           juce::Colours::transparentBlack);
+}
+
+void AmpLookAndFeel::drawRotarySlider (juce::Graphics& g,
+                                        int x, int y, int w, int h,
+                                        float sliderPos,
+                                        float startAngle, float endAngle,
+                                        juce::Slider&)
+{
+    using namespace juce;
+    const float cx  = x + w * 0.5f,  cy = y + h * 0.5f;
+    const float r   = jmin (w, h) * 0.5f - 3.f;
+    const float ang = startAngle + sliderPos * (endAngle - startAngle);
+    const float aw  = jmax (3.0f, r * 0.13f);
+    const float ar  = r - aw * 0.5f - 0.5f;                       // value-arc ring radius
+    const float kr  = jmax (6.0f, ar - aw * 0.5f - 2.5f);         // knob body radius (inside the ring)
+
+    // soft drop shadow under the knob
+    for (int i = 3; i >= 1; --i)
+    {
+        const float s = kr + i * 1.7f;
+        g.setColour (Colours::black.withAlpha (0.22f / (float) i));
+        g.fillEllipse (cx - s + 0.6f, cy - s + 2.6f, s * 2.f, s * 2.f);
+    }
+
+    // value track groove
+    {
+        Path tr;
+        tr.addCentredArc (cx, cy, ar, ar, 0, startAngle, endAngle, true);
+        g.setColour (CT::inputBg);
+        g.strokePath (tr, PathStrokeType (aw, PathStrokeType::curved, PathStrokeType::rounded));
+    }
+
+    // value arc (purple) - glow, solid, bright tip - rings the knob
+    if (sliderPos > 0.005f)
+    {
+        Path gl;
+        gl.addCentredArc (cx, cy, ar, ar, 0, startAngle, ang, true);
+        g.setColour (CT::accentHi.withAlpha (0.16f));
+        g.strokePath (gl, PathStrokeType (aw * 3.0f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (CT::accent.withAlpha (0.28f));
+        g.strokePath (gl, PathStrokeType (aw * 1.9f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (CT::accentHi);
+        g.strokePath (gl, PathStrokeType (aw, PathStrokeType::curved, PathStrokeType::rounded));
+        const float tx = cx + ar * std::sin (ang), ty = cy - ar * std::cos (ang);
+        g.setColour (Colours::white.withAlpha (0.90f));
+        g.fillEllipse (tx - aw * 0.55f, ty - aw * 0.55f, aw * 1.1f, aw * 1.1f);
+    }
+
+    // outer chrome bevel
+    {
+        const float rr = kr + 1.6f;
+        g.setColour (Colour (0xff05060c));
+        g.drawEllipse (cx - rr, cy - rr, rr * 2.f, rr * 2.f, 2.0f);
+        g.setColour (Colour (0xff3a4060).withAlpha (0.90f));
+        g.drawEllipse (cx - kr - 0.4f, cy - kr - 0.4f, (kr + 0.4f) * 2.f, (kr + 0.4f) * 2.f, 1.0f);
+    }
+
+    // knurled metal skirt (the physical grip)
+    {
+        // dark metallic base disc
+        ColourGradient base (Colour (0xff20223a), cx - kr * 0.5f, cy - kr * 0.6f,
+                             Colour (0xff070810), cx + kr * 0.5f, cy + kr * 0.7f, false);
+        g.setGradientFill (base);
+        g.fillEllipse (cx - kr, cy - kr, kr * 2.f, kr * 2.f);
+
+        // serrated grip ridges, brightness shaded by a fixed top-left light
+        const int   teeth    = jlimit (22, 60, roundToInt (kr * 1.25f));
+        const float ridgeIn  = kr * 0.60f;
+        const float ridgeOut = kr * 0.985f;
+        const float lx = -0.55f, ly = -0.83f;     // direction toward the light
+        for (int t = 0; t < teeth; ++t)
+        {
+            const float a  = (float) t / (float) teeth * MathConstants<float>::twoPi;
+            const float sa = std::sin (a), ca = std::cos (a);
+            const float d  = jlimit (0.f, 1.f, 0.5f + 0.5f * (sa * lx + (-ca) * ly));
+            const float br = 0.09f + 0.44f * d;     // ridge highlight strength
+            g.setColour (Colour::fromFloatRGBA (br * 0.72f, br * 0.78f, br, 1.f));
+            g.drawLine (cx + sa * ridgeIn,  cy - ca * ridgeIn,
+                        cx + sa * ridgeOut, cy - ca * ridgeOut, 1.3f);
+        }
+        // inner shadow ring where the skirt meets the cap
+        g.setColour (Colour (0xff05060e).withAlpha (0.80f));
+        g.drawEllipse (cx - kr * 0.60f, cy - kr * 0.60f, kr * 1.20f, kr * 1.20f, 1.4f);
+    }
+
+    // raised cap (the smooth top face)
+    const float capR = kr * 0.58f;
+    {
+        ColourGradient cap (Colour (0xff2b2e48), cx - capR * 0.5f, cy - capR * 0.7f,
+                            Colour (0xff0a0b14), cx + capR * 0.55f, cy + capR * 0.8f, false);
+        g.setGradientFill (cap);
+        g.fillEllipse (cx - capR, cy - capR, capR * 2.f, capR * 2.f);
+
+        g.setColour (Colour (0xff404668).withAlpha (0.85f));
+        g.drawEllipse (cx - capR + 0.4f, cy - capR + 0.4f, capR * 2.f - 0.8f, capR * 2.f - 0.8f, 0.9f);
+
+        // specular highlight, top-left
+        ColourGradient hl (Colours::white.withAlpha (0.30f), cx - capR * 0.4f, cy - capR * 0.6f,
+                           Colours::white.withAlpha (0.00f), cx + capR * 0.2f, cy + capR * 0.25f, false);
+        g.setGradientFill (hl);
+        g.fillEllipse (cx - capR * 0.85f, cy - capR * 0.95f, capR * 1.5f, capR * 1.1f);
+    }
+
+    // pointer indicator
+    {
+        const float dx = std::sin (ang), dy = -std::cos (ang);
+        // engraved dark channel
+        g.setColour (Colour (0xff05060c).withAlpha (0.90f));
+        g.drawLine (cx + dx * capR * 0.15f, cy + dy * capR * 0.15f,
+                    cx + dx * kr * 0.92f,    cy + dy * kr * 0.92f, 3.0f);
+        // bright pointer line
+        g.setColour (CT::textHi);
+        g.drawLine (cx + dx * capR * 0.20f, cy + dy * capR * 0.20f,
+                    cx + dx * kr * 0.86f,    cy + dy * kr * 0.86f, 1.7f);
+        // colored tip
+        g.setColour (CT::accentHi);
+        g.fillEllipse (cx + dx * kr * 0.86f - 2.4f, cy + dy * kr * 0.86f - 2.4f, 4.8f, 4.8f);
+        g.setColour (Colours::white.withAlpha (0.85f));
+        g.fillEllipse (cx + dx * kr * 0.86f - 1.0f, cy + dy * kr * 0.86f - 1.0f, 2.0f, 2.0f);
+    }
+}
+
+void AmpLookAndFeel::drawLinearSlider (juce::Graphics& g,
+                                        int x, int y, int w, int h,
+                                        float pos,
+                                        float /*min*/, float /*max*/,
+                                        juce::Slider::SliderStyle style,
+                                        juce::Slider&)
+{
+    if (style != juce::Slider::LinearHorizontal) return;
+    using namespace juce;
+
+    const float ty = y + h * 0.5f, th = 4.f;
+    const float rx = (float) x, rw = (float) w;
+
+    g.setColour (CT::inputBg);
+    g.fillRoundedRectangle (rx, ty - th * 0.5f, rw, th, 2.f);
+    g.setColour (CT::divider);
+    g.drawRoundedRectangle (rx, ty - th * 0.5f, rw, th, 2.f, 0.8f);
+
+    if (pos > rx + 2.f)
+    {
+        ColourGradient fg (CT::accentHi, rx, ty, CT::accent, pos, ty, false);
+        g.setGradientFill (fg);
+        g.fillRoundedRectangle (rx, ty - th * 0.5f, pos - rx, th, 2.f);
+    }
+
+    // thumb
+    const float tr = 8.f;
+    g.setColour (CT::textHi);
+    g.fillEllipse (pos - tr, ty - tr, tr * 2.f, tr * 2.f);
+    g.setColour (CT::divider);
+    g.drawEllipse (pos - tr + 0.5f, ty - tr + 0.5f, tr * 2.f - 1.f, tr * 2.f - 1.f, 1.f);
+    g.setColour (CT::accent);
+    g.fillEllipse (pos - 2.5f, ty - 2.5f, 5.f, 5.f);
+}
+
+void AmpLookAndFeel::drawButtonBackground (juce::Graphics& g,
+                                            juce::Button& btn,
+                                            const juce::Colour& /*bg*/,
+                                            bool hi, bool down)
+{
+    const auto  b = btn.getLocalBounds().toFloat().reduced (0.5f);
+    const float r = 6.f;
+
+    if (btn.getToggleState())
+    {
+        // Active: solid purple base, subtle top gloss, bright border
+        g.setColour (CT::accent);
+        g.fillRoundedRectangle (b, r);
+
+        // Micro top-gloss highlight
+        g.setColour (juce::Colours::white.withAlpha (0.12f));
+        g.fillRoundedRectangle (b.reduced (2.f).removeFromTop (b.getHeight() * 0.45f), r * 0.65f);
+
+        // Bright border
+        g.setColour (CT::accentHi.withAlpha (0.70f));
+        g.drawRoundedRectangle (b, r, 1.2f);
+    }
+    else
+    {
+        // Inactive: very dark fill, visible gray border
+        const juce::Colour fill = down ? CT::accent.withAlpha (0.28f)
+                                 : hi  ? CT::panelFg.brighter (0.18f)
+                                       : CT::panelFg;
+        g.setColour (fill);
+        g.fillRoundedRectangle (b, r);
+
+        // Visible border
+        g.setColour (CT::panelRim.brighter (0.10f));
+        g.drawRoundedRectangle (b, r, 1.2f);
+    }
+}
+
+void AmpLookAndFeel::drawButtonText (juce::Graphics& g,
+                                      juce::TextButton& btn,
+                                      bool /*hi*/, bool /*dn*/)
+{
+    // Bold text: white when active, mid-gray when not. The channel buttons are the
+    // tallest buttons in the editor, so height alone tells them apart from BYPASS
+    // IR / ON / IR A / IR B, with no special-casing by name. They take the emphasis
+    // step of the scale because switching channel is the biggest change this amp
+    // makes. drawFittedText shrinks rather than clips, so the larger size is safe.
+    const float fs = btn.getHeight() >= 34 ? CT::fChan : CT::fLabel;
+    g.setFont (juce::Font (juce::FontOptions (fs, juce::Font::bold)));
+    g.setColour (btn.getToggleState() ? CT::textHi
+                                      : CT::textMid);
+    g.drawFittedText (btn.getButtonText(),
+                      btn.getLocalBounds().reduced (4, 2),
+                      juce::Justification::centred, 1);
+}
+
+void AmpLookAndFeel::drawComboBox (juce::Graphics& g, int w, int h,
+                                    bool /*dn*/, int bx, int by, int bw, int bh,
+                                    juce::ComboBox&)
+{
+    const auto b = juce::Rectangle<float> (0.f, 0.f, (float) w, (float) h);
+    g.setColour (CT::inputBg);
+    g.fillRoundedRectangle (b, 4.f);
+    g.setColour (CT::divider);
+    g.drawRoundedRectangle (b.reduced (0.5f), 4.f, 1.f);
+
+    const float ax = bx + bw * 0.5f, ay = by + bh * 0.5f;
+    juce::Path arr;
+    arr.addTriangle (ax - 4.f, ay - 2.5f, ax + 4.f, ay - 2.5f, ax, ay + 3.f);
+    g.setColour (CT::accent);
+    g.fillPath (arr);
+}
+
+juce::Font AmpLookAndFeel::getLabelFont (juce::Label& l)
+{
+    return juce::Font (juce::FontOptions (l.getFont().getHeight(), juce::Font::bold));
+}
+
+//==============================================================================
+// FolderIconButton
+void FolderIconButton::paintButton (juce::Graphics& g, bool hi, bool down)
+{
+    const auto b = getLocalBounds().toFloat().reduced (1.f);
+    g.setColour (down ? CT::accent.withAlpha (0.55f)
+                 : hi  ? CT::panelFg.brighter (0.16f)
+                       : CT::inputBg);
+    g.fillRoundedRectangle (b, 4.f);
+    g.setColour (CT::divider);
+    g.drawRoundedRectangle (b.reduced (0.5f), 4.f, 1.f);
+
+    const float fx = b.getX() + 4.f, fy = b.getY() + 4.f;
+    const float fw = b.getWidth() - 8.f, fh = b.getHeight() - 8.f;
+    juce::Path p;
+    p.addRoundedRectangle (fx, fy + fh * 0.28f, fw, fh * 0.72f, 1.5f);
+    p.addRoundedRectangle (fx, fy + fh * 0.16f, fw * 0.44f, fh * 0.20f, 1.f);
+    g.setColour (hi || down ? CT::textMid : CT::textLow);
+    g.fillPath (p);
+}
+
+//==============================================================================
+// helpers
+static void styleKnob (juce::Slider& s, AmpLookAndFeel& laf, int tbW = 64)
+{
+    s.setLookAndFeel (&laf);
+    s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
+    s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, tbW, 16);
+    s.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
+                           juce::MathConstants<float>::pi * 2.75f, true);
+}
+
+static void styleLabel (juce::Label& l, const juce::String& t, float fs = 9.5f)
+{
+    l.setText (t, juce::dontSendNotification);
+    l.setFont (juce::Font (juce::FontOptions (fs, juce::Font::bold)));
+    l.setColour (juce::Label::textColourId, CT::textLow);
+    l.setJustificationType (juce::Justification::centred);
+}
+
+//==============================================================================
+// Constructor
+CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
+    CopilotToneAudioProcessor& p)
+    : AudioProcessorEditor (&p), audioProcessor (p),
+      gainAtt        (p.apvts, "drive",       gainSlider),
+      charAtt        (p.apvts, "char",        charSlider),
+      bassAtt        (p.apvts, "bass",        bassSlider),
+      midAtt         (p.apvts, "mid",         midSlider),
+      trebleAtt      (p.apvts, "treble",      trebleSlider),
+      presAtt        (p.apvts, "presence",    presSlider),
+      masterAtt      (p.apvts, "master",      masterSlider),
+      outAtt         (p.apvts, "output",      outSlider),
+      irMixAtt       (p.apvts, "irMix",       irMixKnob),
+      irBlendAtt     (p.apvts, "irBlend",     irBlendSlider),
+      gateThreshAtt  (p.apvts, "gateThresh",  gateThreshSlider),
+      gateReleaseAtt (p.apvts, "gateRelease", gateReleaseSlider),
+      reverbMixAtt   (p.apvts, "reverbMix",   reverbMixKnob),
+      reverbDecayAtt (p.apvts, "reverbDecay", reverbDecayKnob),
+      reverbToneAtt  (p.apvts, "reverbTone",  reverbToneKnob),
+      delayMixAtt    (p.apvts, "delayMix",    delayMixKnob),
+      delayTimeAtt   (p.apvts, "delayTime",   delayTimeKnob),
+      delayFbAtt     (p.apvts, "delayFeedback", delayFbKnob),
+      modDetuneAtt   (p.apvts, "modDetune",   modDetuneKnob),
+      modChorusAtt   (p.apvts, "modChorus",   modChorusKnob),
+      modRateAtt     (p.apvts, "modRate",     modRateKnob)
+{
+    setSize (1020, 696);
+    setLookAndFeel (&laf);
+
+    // channel buttons
+    const juce::String chNames[] = { "CLEAN", "CRUNCH", "LEAD" };
+    for (int i = 0; i < 3; ++i)
+    {
+        chBtn[i].setLookAndFeel (&laf);
+        chBtn[i].setButtonText (chNames[i]);
+        chBtn[i].setClickingTogglesState (true);
+        chBtn[i].setRadioGroupId (1001);
+        chBtn[i].setColour (juce::TextButton::textColourOffId, CT::textLow);
+        chBtn[i].setColour (juce::TextButton::textColourOnId,  CT::textHi);
+        chBtn[i].onClick = [this, i] { setChannelIndex (i); };
+        addAndMakeVisible (chBtn[i]);
+    }
+
+    // BRIGHT toggle (second row in header, under LEAD)
+    brightBtn.setLookAndFeel (&laf);
+    brightBtn.setButtonText ("BRIGHT");
+    brightBtn.setClickingTogglesState (true);
+    brightBtn.setColour (juce::TextButton::textColourOffId, CT::textLow);
+    brightBtn.setColour (juce::TextButton::textColourOnId,  CT::textHi);
+    brightBtn.onClick = [this]
+    {
+        if (auto* param = audioProcessor.apvts.getParameter ("bright"))
+        {
+            param->beginChangeGesture();
+            param->setValueNotifyingHost (brightBtn.getToggleState() ? 1.f : 0.f);
+            param->endChangeGesture();
+        }
+    };
+    addAndMakeVisible (brightBtn);
+
+    chBtn[0].setTooltip ("CLEAN channel");
+    chBtn[1].setTooltip ("CRUNCH channel");
+    chBtn[2].setTooltip ("LEAD channel - most gain and harmonics");
+    brightBtn.setTooltip ("Tube-Screamer-style OD boost: tightens lows, pushes mids");
+
+    // 8 main knobs
+    struct KI { juce::Slider& s; juce::Label& l; const char* n; const char* tip; };
+    KI ki[] = {
+        { gainSlider,   gainLabel,   "GAIN",     "Preamp gain / distortion amount" },
+        { charSlider,   charLabel,   "DRIVE",    "Character: voicing + even-harmonic content" },
+        { bassSlider,   bassLabel,   "BASS",     "Low end" },
+        { midSlider,    midLabel,    "MID",      "Midrange (vocal/honk)" },
+        { trebleSlider, trebleLabel, "TREBLE",   "High end / presence" },
+        { presSlider,   presLabel,   "PRESENCE", "Power-amp presence shelf (2.5 kHz)" },
+        { masterSlider, masterLabel, "MASTER",   "Power-amp drive: more = more compression/sag" },
+        { outSlider,    outLabel,    "OUTPUT",   "Final output level (dB)" },
+    };
+    for (auto& k : ki)
+    {
+        styleKnob (k.s, laf, 64);
+        styleLabel (k.l, k.n);
+        k.s.setTooltip (k.tip);
+        addAndMakeVisible (k.s);
+        addAndMakeVisible (k.l);
+    }
+
+    // gate knobs
+    styleKnob (gateThreshSlider, laf, 60);
+    styleKnob (gateReleaseSlider, laf, 60);
+    styleLabel (gateThreshLabel,  "THRESHOLD");
+    styleLabel (gateReleaseLabel, "RELEASE");
+    gateThreshSlider.setTooltip ("Noise-gate threshold (dB)");
+    gateReleaseSlider.setTooltip ("Noise-gate release time (ms)");
+    addAndMakeVisible (gateThreshSlider);
+    addAndMakeVisible (gateReleaseSlider);
+
+    // Gate ON/OFF - bypassed by default; only touches the sound when enabled.
+    gateOnBtn.setLookAndFeel (&laf);
+    gateOnBtn.setButtonText ("ON");
+    gateOnBtn.setClickingTogglesState (true);
+    gateOnBtn.setColour (juce::TextButton::textColourOffId, CT::textLow);
+    gateOnBtn.setColour (juce::TextButton::textColourOnId,  CT::textHi);
+    gateOnBtn.setTooltip ("Enable the noise gate (off = fully out of the signal path)");
+    addAndMakeVisible (gateOnBtn);
+    gateOnAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        audioProcessor.apvts, "gateOn", gateOnBtn);
+    addAndMakeVisible (gateThreshLabel);
+    addAndMakeVisible (gateReleaseLabel);
+
+    // GRAPHIC EQ - five vertical faders, Mark-series style.
+    // Labelled with the faceplate frequencies (80/240/750/2200/6600) because that is
+    // what players say; the filters themselves run the measured resonances
+    // 87.61 / 371.74 / 723.43 / 1575.87 / 4822.88 Hz.
+    {
+        static const char* ids  [5] = { "eq80", "eq240", "eq750", "eq2200", "eq6600" };
+        static const char* names[5] = { "80", "240", "750", "2.2k", "6.6k" };
+        static const char* tips [5] = {
+            "87.6 Hz - the thump. Boosted hard in the Classic V.",
+            "372 Hz - low mids. Note the real centre is well above the printed 240.",
+            "723 Hz - THE crucial one. Cutting this is what makes the V a V; the manual "
+            "calls it by far the most important slider.",
+            "1.58 kHz - upper mids and bite.",
+            "4.82 kHz - presence and edge. Boosted hard in the Classic V." };
+        for (int i = 0; i < 5; ++i)
+        {
+            eqSlider[i].setSliderStyle (juce::Slider::LinearVertical);
+            eqSlider[i].setTextBoxStyle (juce::Slider::TextBoxBelow, false, 44, 15);
+            eqSlider[i].setTooltip (tips[i]);
+            addAndMakeVisible (eqSlider[i]);
+            eqAtt[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                audioProcessor.apvts, ids[i], eqSlider[i]);
+            styleLabel (eqLabel[i], names[i], CT::fLabel);
+            addAndMakeVisible (eqLabel[i]);
+        }
+        eqOnBtn.setButtonText ("EQ");
+        eqOnBtn.setClickingTogglesState (true);
+        eqOnBtn.setColour (juce::TextButton::textColourOffId, CT::textLow);
+        eqOnBtn.setColour (juce::TextButton::textColourOnId,  CT::textHi);
+        eqOnBtn.setTooltip ("Graphic EQ in / out. Off by default - it is a large tone change.");
+        eqOnBtn.setLookAndFeel (&laf);
+        addAndMakeVisible (eqOnBtn);
+        eqOnAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+            audioProcessor.apvts, "eqOn", eqOnBtn);
+    }
+
+    // TOPOLOGY switches, sharing the EQ strip because they belong to the same idea:
+    // what kind of amp this is, rather than how it is dialled in.
+    {
+        stackPosBox.setLookAndFeel (&laf);
+        stackPosBox.addItem ("POST", 1);
+        stackPosBox.addItem ("MARK", 2);
+        stackPosBox.setTooltip ("Where the tone stack sits. POST = tone controls colour the "
+                                "finished distortion. MARK = tone stack ahead of the preamp, "
+                                "Mesa Mark style, so the tone knobs decide what gets distorted. "
+                                "MARK is clearer and far more level-stable across tone settings.");
+        addAndMakeVisible (stackPosBox);
+        stackPosAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            audioProcessor.apvts, "stackPos", stackPosBox);
+        styleLabel (stackPosLabel, "STACK", CT::fMicro);
+        addAndMakeVisible (stackPosLabel);
+
+        rectBox.setLookAndFeel (&laf);
+        rectBox.addItem ("SILICON", 1);
+        rectBox.addItem ("TUBE", 2);
+        rectBox.setTooltip ("Rectifier. SILICON is stiff and tight. TUBE sags - B+ drops when "
+                            "the power stage draws current and recovers when it lets go, which "
+                            "is a 5U4 on a Mesa.");
+        addAndMakeVisible (rectBox);
+        rectAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            audioProcessor.apvts, "rectifier", rectBox);
+        styleLabel (rectLabel, "RECT", CT::fMicro);
+        addAndMakeVisible (rectLabel);
+    }
+
+    // IR folder buttons
+    for (auto* fb : { &irAFolderBtn, &irBFolderBtn })
+    {
+        fb->setLookAndFeel (&laf);
+        addAndMakeVisible (fb);
+    }
+    irAFolderBtn.onClick = [this]
+    {
+        fcA = std::make_unique<juce::FileChooser> ("Load Impulse Response A",
+            audioProcessor.irBrowseStart(),
+            "*.wav;*.aif;*.aiff");
+        fcA->launchAsync (juce::FileBrowserComponent::openMode |
+                          juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc) {
+                auto f = fc.getResult();
+                if (f.existsAsFile()) {
+                    audioProcessor.loadIR (f);
+                    audioProcessor.lastIRDir = f.getParentDirectory().getFullPathName();
+                    irANameLabel.setText (f.getFileNameWithoutExtension(),
+                                          juce::dontSendNotification);
+                }
+            });
+    };
+    irBFolderBtn.onClick = [this]
+    {
+        fcB = std::make_unique<juce::FileChooser> ("Load Impulse Response B",
+            audioProcessor.irBrowseStart(),
+            "*.wav;*.aif;*.aiff");
+        fcB->launchAsync (juce::FileBrowserComponent::openMode |
+                          juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc) {
+                auto f = fc.getResult();
+                if (f.existsAsFile()) {
+                    audioProcessor.loadIRB (f);
+                    audioProcessor.lastIRDir = f.getParentDirectory().getFullPathName();
+                    irBNameLabel.setText (f.getFileNameWithoutExtension(),
+                                          juce::dontSendNotification);
+                }
+            });
+    };
+
+    for (auto* lbl : { &irANameLabel, &irBNameLabel })
+    {
+        lbl->setText ("No IR loaded", juce::dontSendNotification);
+        lbl->setFont (juce::Font (juce::FontOptions (CT::fLabel)));
+        lbl->setColour (juce::Label::textColourId, CT::textMid);
+        lbl->setJustificationType (juce::Justification::centredLeft);
+        addAndMakeVisible (lbl);
+    }
+
+    // IR reminder - shown (in amber) only while no IR is loaded; cleared once one is.
+    irHintLabel.setText ("Don't forget to load an IR!", juce::dontSendNotification);
+    irHintLabel.setFont (juce::Font (juce::FontOptions (CT::fMicro, juce::Font::italic)));
+    irHintLabel.setColour (juce::Label::textColourId, CT::amber);
+    irHintLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (irHintLabel);
+
+    styleKnob (irMixKnob, laf, 52);
+    irMixKnob.textFromValueFunction = [] (double v) {
+        return juce::String (juce::roundToInt (v * 100)) + "%";
+    };
+    irMixKnob.valueFromTextFunction = [] (const juce::String& t) {
+        return t.getDoubleValue() / 100.0;
+    };
+    styleLabel (irMixLabel, "BLEND");
+    irMixKnob.setTooltip ("Cabinet IR wet/dry blend");
+    addAndMakeVisible (irMixKnob);
+    addAndMakeVisible (irMixLabel);
+
+    irAFolderBtn.setTooltip ("Load impulse response A (.wav/.aif)");
+    irBFolderBtn.setTooltip ("Load impulse response B (.wav/.aif)");
+    irBlendSlider.setTooltip ("A / B impulse-response crossfade");
+    bypIRBtn.setTooltip ("Bypass the cabinet IR (amp head only)");
+
+    irBlendSlider.setLookAndFeel (&laf);
+    irBlendSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    irBlendSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    addAndMakeVisible (irBlendSlider);
+
+    bypIRBtn.setLookAndFeel (&laf);
+    bypIRBtn.setButtonText ("BYPASS IR");
+    bypIRBtn.setClickingTogglesState (true);
+    bypIRBtn.setColour (juce::TextButton::textColourOffId, CT::textLow);
+    bypIRBtn.setColour (juce::TextButton::textColourOnId,  CT::textHi);
+    addAndMakeVisible (bypIRBtn);
+    bypIRAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        audioProcessor.apvts, "bypassIR", bypIRBtn);
+
+    // Post FX voices. The type dropdowns are choice params; each effect carries
+    // three live knobs.
+    reverbTypeBox.setLookAndFeel (&laf);
+    reverbTypeBox.addItem ("Spring", 1);
+    reverbTypeBox.addItem ("Hall",   2);
+    reverbTypeBox.addItem ("Room",   3);
+    reverbTypeBox.addItem ("Plate",  4);
+    addAndMakeVisible (reverbTypeBox);
+    reverbTypeAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        audioProcessor.apvts, "reverbType", reverbTypeBox);
+
+    delayTypeBox.setLookAndFeel (&laf);
+    delayTypeBox.addItem ("Digital", 1);
+    delayTypeBox.addItem ("Analog",  2);
+    delayTypeBox.addItem ("Tape",    3);
+    addAndMakeVisible (delayTypeBox);
+    delayTypeAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        audioProcessor.apvts, "delayType", delayTypeBox);
+
+    // Small FX knobs - pedal-style (no numeric box), caption label below.
+    const auto styleFxKnob = [&] (juce::Slider& s)
+    {
+        styleKnob (s, laf, 44);
+        s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    };
+    for (auto* s : { &reverbMixKnob, &reverbDecayKnob, &reverbToneKnob,
+                     &delayMixKnob,  &delayTimeKnob,   &delayFbKnob,
+                     &modDetuneKnob, &modChorusKnob,   &modRateKnob })
+    {
+        styleFxKnob (*s);
+        addAndMakeVisible (*s);
+    }
+    reverbTypeBox.setTooltip   ("Reverb voice: Spring / Hall / Room / Plate");
+    delayTypeBox.setTooltip    ("Delay voice: Digital / Analog / Tape");
+    reverbMixKnob.setTooltip   ("Reverb amount");
+    reverbDecayKnob.setTooltip ("Reverb decay / size");
+    reverbToneKnob.setTooltip  ("Reverb tone: dark - bright");
+    delayMixKnob.setTooltip    ("Delay amount");
+    delayTimeKnob.setTooltip   ("Delay time (ms)");
+    delayFbKnob.setTooltip     ("Delay feedback / repeats");
+    modDetuneKnob.setTooltip   ("Background detune width (ambient shimmer)");
+    modChorusKnob.setTooltip   ("Background chorus depth");
+    modRateKnob.setTooltip     ("Modulation rate");
+
+    styleLabel (reverbLabel, "REVERB", 9.f);
+    styleLabel (delayLabel,  "DELAY",  9.f);
+    styleLabel (modLabel,    "MODULATION", 9.f);
+    for (auto* l : { &reverbLabel, &delayLabel, &modLabel })
+    {
+        l->setJustificationType (juce::Justification::centredLeft);
+        addAndMakeVisible (*l);
+    }
+
+    struct FxL { juce::Label& l; const char* t; };
+    FxL fxl[] = {
+        { reverbMixLabel,   "MIX"    }, { reverbDecayLabel, "DECAY"  }, { reverbToneLabel, "TONE" },
+        { delayMixLabel,    "MIX"    }, { delayTimeLabel,   "TIME"   }, { delayFbLabel,    "FDBK" },
+        { modDetuneLabel,   "DETUNE" }, { modChorusLabel,   "CHORUS" }, { modRateLabel,    "RATE" },
+    };
+    for (auto& f : fxl)
+    {
+        styleLabel (f.l, f.t, 8.f);
+        addAndMakeVisible (f.l);
+    }
+
+    // bottom bar combos
+    // OVERSAMPLING (x1/x2/x4/x8) and QUALITY (Draft/Normal/High/Ultra) are two
+    // views of the SAME real oversampling factor (param "osFactor", index 0-3).
+    // Changing either drives the param; the timer keeps both combos in sync.
+    oversamplingBox.setLookAndFeel (&laf);
+    oversamplingBox.addItem ("x1", 1);
+    oversamplingBox.addItem ("x2", 2);
+    oversamplingBox.addItem ("x4", 3);
+    oversamplingBox.addItem ("x8", 4);
+    oversamplingBox.onChange = [this] { setOsFactorIndex (oversamplingBox.getSelectedId() - 1); };
+    oversamplingBox.setTooltip ("Oversampling of the nonlinear stages: higher = less aliasing, more CPU");
+    addAndMakeVisible (oversamplingBox);
+
+    qualityBox.setLookAndFeel (&laf);
+    qualityBox.addItem ("Draft",  1);
+    qualityBox.addItem ("Normal", 2);
+    qualityBox.addItem ("High",   3);
+    qualityBox.addItem ("Ultra",  4);
+    qualityBox.onChange = [this] { setOsFactorIndex (qualityBox.getSelectedId() - 1); };
+    qualityBox.setTooltip ("Render quality (mirrors Oversampling): Draft=x1, Normal=x2, High=x4, Ultra=x8");
+    addAndMakeVisible (qualityBox);
+
+    startTimerHz (24);
+}
+
+//==============================================================================
+CopilotToneAudioProcessorEditor::~CopilotToneAudioProcessorEditor()
+{
+    stopTimer();
+    setLookAndFeel (nullptr);
+    for (auto& b : chBtn)            b.setLookAndFeel (nullptr);
+    brightBtn.setLookAndFeel         (nullptr);
+    for (auto* s : { &gainSlider, &charSlider, &bassSlider, &midSlider,
+                     &trebleSlider, &presSlider, &masterSlider, &outSlider })
+        s->setLookAndFeel (nullptr);
+    gateThreshSlider.setLookAndFeel  (nullptr);
+    gateReleaseSlider.setLookAndFeel (nullptr);
+    gateOnBtn.setLookAndFeel         (nullptr);
+    irAFolderBtn.setLookAndFeel      (nullptr);
+    irBFolderBtn.setLookAndFeel      (nullptr);
+    irMixKnob.setLookAndFeel         (nullptr);
+    irBlendSlider.setLookAndFeel     (nullptr);
+    bypIRBtn.setLookAndFeel          (nullptr);
+    reverbTypeBox.setLookAndFeel     (nullptr);
+    delayTypeBox.setLookAndFeel      (nullptr);
+    for (auto* s : { &reverbMixKnob, &reverbDecayKnob, &reverbToneKnob,
+                     &delayMixKnob,  &delayTimeKnob,   &delayFbKnob,
+                     &modDetuneKnob, &modChorusKnob,   &modRateKnob })
+        s->setLookAndFeel (nullptr);
+    oversamplingBox.setLookAndFeel   (nullptr);
+    qualityBox.setLookAndFeel        (nullptr);
+}
+
+//==============================================================================
+void CopilotToneAudioProcessorEditor::timerCallback()
+{
+    const int ch = (int) audioProcessor.apvts.getRawParameterValue ("channel")->load();
+    for (int i = 0; i < 3; ++i)
+        chBtn[i].setToggleState (ch == i, juce::dontSendNotification);
+
+    brightBtn.setToggleState (
+        audioProcessor.apvts.getRawParameterValue ("bright")->load() > 0.5f,
+        juce::dontSendNotification);
+
+    // Three states, not two. "No IR loaded" and "that cab could not be found" are
+    // different problems with different answers: one means load something, the other
+    // means go and find THAT file. Naming the missing cab is the point, since a
+    // generic "no IR" says nothing about what to look for.
+    auto irText = [] (bool loaded, bool missing, const juce::String& name)
+    {
+        if (loaded)  return name;
+        if (missing) return name + "  (not found)";
+        return juce::String ("No IR loaded");
+    };
+    irANameLabel.setText (irText (audioProcessor.irSection.irALoaded.load(),
+                                  audioProcessor.irSection.irAMissing.load(),
+                                  audioProcessor.irSection.irAName),
+                          juce::dontSendNotification);
+    irBNameLabel.setText (irText (audioProcessor.irSection.irBLoaded.load(),
+                                  audioProcessor.irSection.irBMissing.load(),
+                                  audioProcessor.irSection.irBName),
+                          juce::dontSendNotification);
+    irANameLabel.setColour (juce::Label::textColourId,
+        audioProcessor.irSection.irAMissing.load() ? juce::Colour (0xfffb923c) : CT::textMid);
+    irBNameLabel.setColour (juce::Label::textColourId,
+        audioProcessor.irSection.irBMissing.load() ? juce::Colour (0xfffb923c) : CT::textMid);
+
+    // Reminder visible only while no IR is loaded
+    const bool anyIR = audioProcessor.irSection.irALoaded.load()
+                    || audioProcessor.irSection.irBLoaded.load();
+    if (irHintLabel.isVisible() == anyIR)
+        irHintLabel.setVisible (! anyIR);
+
+    if (noIRLoaded == anyIR)          // state flipped
+    {
+        noIRLoaded = ! anyIR;
+        repaint (0, 74, getWidth(), 34);   // just the banner strip
+    }
+
+    // Keep the OVERSAMPLING + QUALITY combos mirrored to the shared osFactor.
+    const int osi = juce::jlimit (0, 3,
+        (int) audioProcessor.apvts.getRawParameterValue ("osFactor")->load());
+    if (oversamplingBox.getSelectedId() != osi + 1)
+        oversamplingBox.setSelectedId (osi + 1, juce::dontSendNotification);
+    if (qualityBox.getSelectedId() != osi + 1)
+        qualityBox.setSelectedId (osi + 1, juce::dontSendNotification);
+
+    // exchange(0) consumes the accumulated peak, so every block since the last
+    // tick is accounted for even at a 24 Hz poll rate.
+    const float inPk  = audioProcessor.inputPeakLin .exchange (0.f);
+    const float outPk = audioProcessor.outputPeakLin.exchange (0.f);
+    cachedInDb  = inPk  > 1e-7f ? juce::Decibels::gainToDecibels (inPk)  : -120.f;
+    cachedOutDb = outPk > 1e-7f ? juce::Decibels::gainToDecibels (outPk) : -120.f;
+    // Clip hold (~1.5 s at 24 Hz): light/keep the top segment red after a peak >= -0.3 dB.
+    inClipHold  = (cachedInDb  >= -0.3f) ? 36 : juce::jmax (0, inClipHold  - 1);
+    outClipHold = (cachedOutDb >= -0.3f) ? 36 : juce::jmax (0, outClipHold - 1);
+
+    // Peak-hold feeding the gain-staging readout: catch the peak, sit on it for
+    // ~1 s, then fall about 12 dB/s. Without this the text flickers on every note.
+    if (cachedInDb > inPeakHold) { inPeakHold = cachedInDb; inPeakWait = 24; }
+    else if (inPeakWait > 0)     { --inPeakWait; }
+    else                         { inPeakHold = juce::jmax (-120.f, inPeakHold - 0.5f); }
+    repaint (0, getHeight() - 38, getWidth(), 38);
+}
+
+void CopilotToneAudioProcessorEditor::setChannelIndex (int idx)
+{
+    if (auto* p = audioProcessor.apvts.getParameter ("channel"))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost ((float) idx / 2.f);
+        p->endChangeGesture();
+    }
+}
+
+void CopilotToneAudioProcessorEditor::setOsFactorIndex (int idx)
+{
+    idx = juce::jlimit (0, 3, idx);
+    if (auto* p = audioProcessor.apvts.getParameter ("osFactor"))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost ((float) idx / 3.f);   // 4-choice param -> normalized
+        p->endChangeGesture();
+    }
+}
+
+//==============================================================================
+// Level meter: 20 segments, 3 dB apart, running -60 dB up to -3 dB. The colours
+// read as gain-staging advice rather than loudness, so levels below the target
+// window are dimmed as well - too soft is a problem too.
+//
+// showTarget draws the -18 to -12 dBFS bracket used for setting input level. That
+// window is the amp-sim convention, not the general -18 dBFS RMS tracking rule.
+// Peak is the right metric because peak voltage drives the modelled input stage,
+// and a guitar crest factor of 15-20 dB would put peaks near clipping if -18 dBFS
+// average were the target. The bracket is placed by dB rather than by segment
+// index, so it survives a change to the segment layout.
+void CopilotToneAudioProcessorEditor::drawLevelMeter (juce::Graphics& g,
+                                                        juce::Rectangle<int> b,
+                                                        float dB, bool clip, bool showTarget)
+{
+    const int   N    = 20;
+    const float sw   = (b.getWidth() - N + 1.f) / (float) N;
+    auto xForDb = [&] (float d) { return b.getX() + ((d + 60.f) / 3.f) * (sw + 1.f); };
+
+    for (int i = 0; i < N; ++i)
+    {
+        const float sd = -60.f + (float) i * 3.f;
+        const float sx = b.getX() + i * (sw + 1.f);
+        const bool  on = dB >= sd;
+
+        juce::Colour c;
+        if      (sd < -18.f) c = on ? juce::Colour (0xff15803d) : juce::Colour (0xff0c1c10);
+        else if (sd < -12.f) c = on ? juce::Colour (0xff22c55e) : juce::Colour (0xff0c1c10);
+        else if (sd <  -6.f) c = on ? juce::Colour (0xffecba08) : juce::Colour (0xff201800);
+        else                 c = on ? juce::Colour (0xffef4444) : juce::Colour (0xff200808);
+
+        // Hold a bright red on the top segment when a clip was detected.
+        if (clip && i == N - 1) c = juce::Colour (0xffff5555);
+
+        g.setColour (c);
+        g.fillRoundedRectangle (sx, (float) b.getY(), sw, (float) b.getHeight(), 1.5f);
+    }
+
+    if (showTarget)
+    {
+        const float x1 = xForDb (-18.f);
+        const float x2 = xForDb (-12.f);
+        const float ty = (float) b.getY();
+        g.setColour (juce::Colour (0xffd6f5e0).withAlpha (0.85f));
+        g.fillRect (x1, ty, x2 - x1, 1.6f);            // span across the target window
+        g.fillRect (x1, ty, 1.4f, 4.5f);               // end ticks
+        g.fillRect (x2 - 1.4f, ty, 1.4f, 4.5f);
+    }
+}
+
+//==============================================================================
+// paint
+void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
+{
+    using namespace juce;
+
+    const int W     = getWidth();
+    const int H     = getHeight();
+    const int hdrH  = 80;
+    const int barH  = 38;
+    const int kpY   = hdrH + 8;    // knob panel y
+    const int kpH   = 218;         // knob panel height
+    const int eqY   = kpY + kpH + 8;   // graphic EQ strip
+    const int eqH   = 88;
+    const int ftrY  = eqY + eqH + 8;
+    const int ftrH  = H - barH - ftrY;
+
+    // body background
+    g.setColour (CT::bg);
+    g.fillAll();
+
+    //==============================================================================
+    //  HEADER
+    {
+        // background gradient
+        ColourGradient hg (Colour (0xff111222), 0.f, 0.f,
+                           Colour (0xff08090e), 0.f, (float) hdrH, false);
+        g.setGradientFill (hg);
+        g.fillRect (0, 0, W, hdrH);
+
+        // top purple stripe
+        g.setColour (CT::accent);
+        g.fillRect (0, 0, W, 3);
+
+        // left vertical accent bar
+        ColourGradient lb (CT::accent.withAlpha (0.85f), 0.f, 3.f,
+                           CT::accent.withAlpha (0.08f), 0.f, (float) hdrH, false);
+        g.setGradientFill (lb);
+        g.fillRect (0, 3, 3, hdrH - 3);
+
+        // bottom separator
+        g.setColour (CT::panelRim);
+        g.fillRect (0, hdrH - 1, W, 1);
+
+        // "AmpHead" - bold white
+        g.setFont (Font (FontOptions (CT::fBrand, Font::bold)));
+        g.setColour (CT::textHi);
+        g.drawText ("AmpHead", 22, 14, 162, 34, Justification::centredLeft);
+
+        // "Custom" - amber accent
+        g.setFont (Font (FontOptions (CT::fBrand, Font::plain)));
+        g.setColour (CT::amber);
+        g.drawText ("Custom", 22 + 152, 14, 112, 34, Justification::centredLeft);
+
+        // "by" - small plain italic lead-in
+        g.setFont (Font (FontOptions (CT::fLabel, Font::italic)));
+        g.setColour (CT::textLow);
+        g.drawText ("by", 22 + 272, 27, 22, 16, Justification::centredLeft);
+
+        // "JCConcepcion" - script signature (Snell Roundhand on macOS, default face
+        // elsewhere), with a gold gradient and a flourish underline so it reads as
+        // an autograph.
+        {
+            const float sigX  = 22.f + 294.f;   // just after "by"
+            const float baseY = 38.f;           // text baseline
+            Font sig (FontOptions ("Snell Roundhand", 29.f, Font::bold));
+
+            GlyphArrangement ga;
+            ga.addLineOfText (sig, "JCConcepcion", sigX, baseY);
+            const auto bb = ga.getBoundingBox (0, -1, true);
+
+            // soft drop shadow
+            g.setColour (Colours::black.withAlpha (0.40f));
+            ga.draw (g, AffineTransform::translation (1.2f, 1.6f));
+
+            // warm gold gradient fill
+            ColourGradient grad (CT::amber.brighter (0.35f), bb.getX(), bb.getY(),
+                                 CT::amber.darker   (0.12f), bb.getX(), bb.getBottom(), false);
+            g.setGradientFill (grad);
+            ga.draw (g);
+
+            // flourish: swoop under the name, then flick upward at the end
+            const float lx = bb.getX(), rx = bb.getRight(), uy = bb.getBottom() - 1.f;
+            Path fl;
+            fl.startNewSubPath (lx + 1.f, uy - 1.f);
+            fl.cubicTo (lx + (rx - lx) * 0.30f, uy + 3.5f,
+                        lx + (rx - lx) * 0.68f, uy + 3.5f,
+                        rx - 5.f, uy - 2.f);
+            fl.quadraticTo (rx + 7.f, uy - 5.f, rx + 16.f, uy - 14.f);
+            g.setColour (CT::amber.withAlpha (0.85f));
+            g.strokePath (fl, PathStrokeType (1.7f, PathStrokeType::curved, PathStrokeType::rounded));
+        }
+
+        // subtitle with bullet separator
+        g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
+        g.setColour (CT::textDim);
+        // bullet char U+2022 in UTF-8: \xe2\x80\xa2
+        const auto bullet = juce::String::fromUTF8 ("\xe2\x80\xa2");
+        g.drawText (juce::String ("BOUTIQUE AMP HEAD  ") + bullet + juce::String ("  PROTOTYPE"),
+                    22, 50, 300, 14, Justification::centredLeft);
+
+        // gear icon (drawn, not interactive)
+        {
+            const float gx = (float)(W - 34), gy = 22.f, gr = 11.f;
+            // outer ring
+            g.setColour (CT::divider);
+            g.drawEllipse (gx - gr, gy - gr, gr * 2.f, gr * 2.f, 1.5f);
+            g.setColour (CT::textDim);
+            g.drawEllipse (gx - gr, gy - gr, gr * 2.f, gr * 2.f, 1.f);
+            // teeth: 8 small rectangles radiating outward
+            for (int ti = 0; ti < 8; ++ti)
+            {
+                const float ta = ti * juce::MathConstants<float>::pi / 4.f;
+                const float tx = gx + (gr + 2.f) * std::sin (ta);
+                const float ty = gy - (gr + 2.f) * std::cos (ta);
+                g.fillEllipse (tx - 1.8f, ty - 1.8f, 3.6f, 3.6f);
+            }
+            // inner hub
+            g.setColour (CT::textDim);
+            g.fillEllipse (gx - 4.f, gy - 4.f, 8.f, 8.f);
+        }
+    }
+
+    // active channel underline glow
+    {
+        const int chan = (int) audioProcessor.apvts.getRawParameterValue ("channel")->load();
+        const int btnW = 104, btnGap = 4, gearW = 32;
+        const int btnH = 36, bY = (hdrH - btnH) / 2 - 6;
+        const int btnAreaRight = W - 14 - gearW - 10;
+        const int btnAreaLeft  = btnAreaRight - (3 * btnW + 2 * btnGap);
+        const float ix = (float)(btnAreaLeft + chan * (btnW + btnGap));
+        const float iw = (float) btnW;
+        const float iy = (float)(bY + btnH + 1);
+
+        ColourGradient glow (CT::accent.withAlpha (0.30f), ix + iw * 0.5f, iy,
+                             CT::accent.withAlpha (0.f),   ix + iw * 0.5f, iy - 14.f, false);
+        g.setGradientFill (glow);
+        g.fillRect (ix, iy - 14.f, iw, 14.f);
+        g.setColour (CT::accent);
+        g.fillRoundedRectangle (ix, iy, iw, 2.5f, 1.5f);
+    }
+
+    //==============================================================================
+    //  KNOB PANEL
+    {
+        // GRAPHIC EQ strip - same panel language as the knob row so it reads as part
+        // of the amp and not as a bolted-on plugin feature. Dimmed while the EQ is
+        // switched out, so the panel itself says whether it is in the signal path.
+        {
+            const Rectangle<float> ER (14.f, (float) eqY, (float)(W - 28), (float) eqH);
+            const bool on = audioProcessor.apvts.getRawParameterValue ("eqOn")->load() > 0.5f;
+            for (int i = 4; i >= 1; --i)
+            {
+                g.setColour (Colours::black.withAlpha (0.18f / i));
+                g.fillRoundedRectangle (ER.expanded (i * 1.4f).translated (0.f, i * 1.4f), 10.f);
+            }
+            ColourGradient ef (Colour (0xff181a2a), ER.getX(), ER.getY(),
+                               Colour (0xff0c0d14), ER.getX(), ER.getBottom(), false);
+            g.setGradientFill (ef);
+            g.fillRoundedRectangle (ER, 8.f);
+            g.setColour (CT::panelRim.withAlpha (on ? 0.85f : 0.35f));
+            g.drawRoundedRectangle (ER.reduced (0.5f), 8.f, 1.f);
+
+            g.setColour (on ? CT::accentHi : CT::textDim);
+            g.setFont (Font (FontOptions (CT::fPanel, Font::bold)));
+            g.drawText ("GRAPHIC EQ", 26, eqY + 8, 110, 20, Justification::centredLeft);
+            g.setColour (CT::textLow);
+            g.setFont (Font (FontOptions (CT::fMicro)));
+            g.drawText ("MARK V-CURVE", 26, eqY + 28, 110, 16, Justification::centredLeft);
+
+            // 0 dB reference line across the fader travel. Without a centre line,
+            // flat is hard to find.
+            g.setColour (CT::panelRim.withAlpha (0.55f));
+            const int mid = eqY + 18 + (eqH - 24 - 15) / 2;
+            g.fillRect (254, mid, W - 254 - 78, 1);
+        }
+
+        const Rectangle<float> PR (14.f, (float) kpY, (float)(W - 28), (float) kpH);
+
+        // shadow
+        for (int i = 4; i >= 1; --i)
+        {
+            g.setColour (Colours::black.withAlpha (0.18f / i));
+            g.fillRoundedRectangle (PR.expanded (i * 1.4f).translated (0.f, i * 1.4f), 10.f);
+        }
+
+        // panel face
+        ColourGradient pf (Colour (0xff181a2a), PR.getX(), PR.getY(),
+                           Colour (0xff0c0d14), PR.getX(), PR.getBottom(), false);
+        g.setGradientFill (pf);
+        g.fillRoundedRectangle (PR, 8.f);
+
+        // borders
+        g.setColour (Colour (0xff06070e));
+        g.drawRoundedRectangle (PR.expanded (0.5f), 8.5f, 1.5f);
+        g.setColour (Colour (0xff222440).withAlpha (0.7f));
+        g.drawRoundedRectangle (PR.reduced (0.5f), 7.5f, 0.8f);
+
+        // chamfer highlight
+        g.setColour (Colour (0xff2d3055).withAlpha (0.5f));
+        g.fillRoundedRectangle (PR.reduced (1.5f, 1.5f).withHeight (2.f), 1.f);
+
+        // vertical separator after knob 5
+        {
+            const int colW = (W - 44) / 8;
+            const float sx = 22.f + colW * 5.f - 1.f;
+            g.setColour (CT::divider.withAlpha (0.55f));
+            g.fillRect (sx, PR.getY() + 12.f, 1.f, PR.getHeight() - 24.f);
+            g.setColour (CT::accent.withAlpha (0.06f));
+            g.fillRect (sx - 1.f, PR.getY() + 12.f, 3.f, PR.getHeight() - 24.f);
+        }
+
+        // corner screws
+        const float sm = 11.f, sr = 4.f;
+        const Point<float> scr[] = {
+            { PR.getX() + sm, PR.getY() + sm },
+            { PR.getRight() - sm, PR.getY() + sm },
+            { PR.getX() + sm, PR.getBottom() - sm },
+            { PR.getRight() - sm, PR.getBottom() - sm },
+        };
+        for (auto& sc : scr)
+        {
+            g.setColour (Colours::black.withAlpha (0.5f));
+            g.fillEllipse (sc.x - sr + 0.5f, sc.y - sr + 2.f, sr * 2.f, sr * 2.f);
+            ColourGradient sg (Colour (0xff1d2030), sc.x - sr, sc.y - sr,
+                               Colour (0xff060710), sc.x + sr, sc.y + sr, false);
+            g.setGradientFill (sg);
+            g.fillEllipse (sc.x - sr, sc.y - sr, sr * 2.f, sr * 2.f);
+            g.setColour (Colour (0xff2b2e48).withAlpha (0.7f));
+            g.drawEllipse (sc.x - sr + 0.5f, sc.y - sr + 0.5f, sr * 2.f - 1.f, sr * 2.f - 1.f, 0.8f);
+            g.setColour (Colour (0xff040610));
+            g.drawLine (sc.x - sr * 0.48f, sc.y, sc.x + sr * 0.48f, sc.y, 1.f);
+            g.drawLine (sc.x, sc.y - sr * 0.48f, sc.x, sc.y + sr * 0.48f, 1.f);
+        }
+    }
+
+    //==============================================================================
+    //  FOOTER
+    {
+        g.setColour (CT::bg);
+        g.fillRect (0, ftrY, W, ftrH);
+        g.setColour (CT::accent.withAlpha (0.15f));
+        g.fillRect (0, ftrY, W, 1);
+        g.setColour (CT::divider);
+        g.fillRect (0, ftrY + 1, W, 1);
+
+        // panel geometry
+        const int mg  = 14;
+        const int gW  = 196;     // noise gate panel
+        const int pfW = 336;     // post fx panel
+        const int irW = W - mg * 2 - gW - pfW - 16;
+        const int gX  = mg;
+        const int irX = gX + gW + 8;
+        const int pfX = irX + irW + 8;
+        const int pY  = ftrY + 8;
+        const int pH  = ftrH - 12;
+
+        // draw sub-panel boxes
+        const auto drawPanel = [&] (int px, int pw)
+        {
+            Rectangle<float> r ((float) px, (float) pY, (float) pw, (float) pH);
+            // drop shadow
+            g.setColour (Colours::black.withAlpha (0.30f));
+            g.fillRoundedRectangle (r.translated (0.f, 2.f).expanded (1.f), 8.f);
+            // face
+            g.setColour (CT::bg2);
+            g.fillRoundedRectangle (r, 6.f);
+            // border
+            g.setColour (CT::divider);
+            g.drawRoundedRectangle (r.reduced (0.5f), 6.f, 1.f);
+        };
+        drawPanel (gX,  gW);
+        drawPanel (irX, irW);
+        drawPanel (pfX, pfW);
+
+        // panel header bars (full width, combobox-style)
+        const auto drawHdr = [&] (int hx, int hw, const juce::String& txt)
+        {
+            Rectangle<float> r ((float)(hx + 8), (float)(pY + 8), (float)(hw - 16), 24.f);
+            g.setColour (CT::inputBg);
+            g.fillRoundedRectangle (r, 4.f);
+            g.setColour (CT::divider);
+            g.drawRoundedRectangle (r.reduced (0.5f), 4.f, 1.f);
+            // text
+            g.setFont (Font (FontOptions (CT::fLabel, Font::bold)));
+            g.setColour (CT::textLow);
+            g.drawText (txt, r.reduced (10.f, 0.f), Justification::centredLeft);
+            // dropdown arrow
+            const float ax = r.getRight() - 14.f, ay = r.getCentreY();
+            Path arr;
+            arr.addTriangle (ax - 4.f, ay - 2.5f, ax + 4.f, ay - 2.5f, ax, ay + 3.f);
+            g.setColour (CT::accent);
+            g.fillPath (arr);
+        };
+        drawHdr (gX,  gW,  "NOISE GATE");
+        drawHdr (irX, irW / 2 + 10, "IR LOADER");
+        drawHdr (pfX, pfW, "POST FX");
+
+        // IR section
+        const int rTop = pY + 40;
+
+        // "IR A" / "IR B" text labels
+        g.setFont (Font (FontOptions (CT::fLabel, Font::bold)));
+        g.setColour (CT::textLow);
+        g.drawText ("IR A", irX + 10, rTop,      32, 22, Justification::centredLeft);
+        g.drawText ("IR B", irX + 10, rTop + 28, 32, 22, Justification::centredLeft);
+
+        // file name field backgrounds
+        const int fnX = irX + 46, fnW = irW / 2 - 62;
+        for (int row = 0; row < 2; ++row)
+        {
+            Rectangle<float> fr ((float) fnX, (float)(rTop + row * 28), (float) fnW, 22.f);
+            g.setColour (CT::inputBg);
+            g.fillRoundedRectangle (fr, 3.f);
+            g.setColour (CT::divider);
+            g.drawRoundedRectangle (fr.reduced (0.5f), 3.f, 1.f);
+        }
+
+        // vertical divider between IR files area and BLEND area
+        const int divX = irX + irW / 2 + 4;
+        g.setColour (CT::divider.withAlpha (0.6f));
+        g.fillRect ((float) divX, (float)(pY + 12), 1.f, (float)(pH - 24));
+
+        // "BLEND" header text above knob
+        const int blendAreaCX = irX + irW / 2 + (irW / 2) / 2;
+        g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
+        g.setColour (CT::textLow);
+        const auto blt = juce::String::fromUTF8 ("\xe2\x80\xa2");
+        g.drawText (blt + juce::String (" BLEND ") + blt,
+                    blendAreaCX - 44, pY + 36, 88, 12, Justification::centred);
+
+        // A / B slider end labels
+        const int slY = pY + pH - 24;
+        const int slX = blendAreaCX - 74;
+        g.setFont (Font (FontOptions (CT::fLabel, Font::bold)));
+        g.setColour (CT::textLow);
+        g.drawText ("A", slX - 16, slY, 18, 16, Justification::centred);
+        g.drawText ("B", slX + 150, slY, 18, 16, Justification::centred);
+
+        // "A  BLEND  B" caption above the crossfade slider.
+        g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
+        g.setColour (CT::textDim);
+        g.drawText ("A  BLEND  B", slX - 14, slY - 16, 176, 16, Justification::centred);
+
+        // Post FX captions are Labels placed in resized(), not drawn here.
+    }
+
+    //==============================================================================
+    //  BOTTOM BAR
+    {
+        const int bY = H - barH;
+        g.setColour (Colour (0xff07080d));
+        g.fillRect (0, bY, W, barH);
+        g.setColour (CT::divider);
+        g.fillRect (0, bY, W, 1);
+
+        // labels
+        g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
+        g.setColour (CT::textLow);
+        g.drawText ("INPUT", 14, bY + 2, 48, 16, Justification::centredLeft);
+
+        // meters. Only the input meter gets the target bracket - the output meter
+        // is about staying under the ceiling, not hitting a window.
+        drawLevelMeter (g, { 60,      bY + 2, 170, 14 }, cachedInDb,  inClipHold  > 0, true);
+        drawLevelMeter (g, { W - 235, bY + 2, 170, 14 }, cachedOutDb, outClipHold > 0, false);
+
+        // Right of the output meter: the OUTPUT label, which becomes a CLIP badge
+        // while the clip hold is active. It sits clear of the meter, which ends at
+        // W-65.
+        if (outClipHold > 0)
+        {
+            g.setColour (Colour (0xffef4444));
+            g.fillRoundedRectangle ((float) (W - 58), (float) (bY + 3), 34.f, 12.f, 2.f);
+            g.setColour (Colours::white);
+            g.setFont (Font (FontOptions (8.f, Font::bold)));
+            g.drawText ("CLIP", W - 60, bY + 1, 38, 16, Justification::centred);
+        }
+        else
+        {
+            g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
+            g.setColour (CT::textLow);
+            g.drawText ("OUTPUT", W - 64, bY + 2, 54, 16, Justification::centredLeft);
+        }
+
+        // Live gain-staging readout under the INPUT meter. Run too hot and the
+        // modelled input stage leaves its headroom window, which is what makes a
+        // sim sound compressed and fizzy. How much signal arrives depends entirely
+        // on the guitar - passive single coils and active humbuckers are more than
+        // 15 dB apart - so the text reports where the level is, not just the target.
+        // The fix always lives at the audio interface, and the wording says so:
+        // there is no input trim in the plugin.
+        {
+            String  msg;
+            Colour  col;
+            if      (inPeakHold < -50.f) { msg = "NO SIGNAL";                            col = CT::textDim;         }
+            else if (inPeakHold < -24.f) { msg = "TOO LOW - raise interface gain";       col = CT::textLow;         }
+            else if (inPeakHold < -18.f) { msg = "A BIT LOW";                            col = Colour (0xff15803d); }
+            else if (inPeakHold < -12.f) { msg = "GOOD";                                 col = Colour (0xff22c55e); }
+            else if (inPeakHold <  -6.f) { msg = "HOT";                                  col = Colour (0xffecba08); }
+            else                         { msg = "TOO HOT - lower interface gain";       col = Colour (0xffef4444); }
+
+            g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
+            g.setColour (col);
+            g.drawText (msg, 60, bY + 16, 240, 16, Justification::centredLeft);
+
+            // Target reminder, sitting right under the bracket drawn on the meter.
+            g.setFont (Font (FontOptions (CT::fMicro)));
+            g.setColour (CT::textDim);
+            g.drawText ("TARGET -18 to -12 dB peak", 14, bY + 30, 210, 15, Justification::centredLeft);
+        }
+
+        // Only shown while output is actually clipping - points at the control
+        // that fixes it rather than leaving a bare red light.
+        if (outClipHold > 0)
+        {
+            g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
+            g.setColour (Colour (0xffef4444));
+            g.drawText ("lower OUTPUT", W - 235, bY + 16, 170, 16, Justification::centredRight);
+        }
+
+        // OVERSAMPLING / QUALITY labels
+        g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
+        g.setColour (CT::textDim);
+        g.drawText ("OVERSAMPLING", W / 2 - 136, bY + 2, 100, 16, Justification::centredRight);
+        g.drawText ("QUALITY",      W / 2 + 50,  bY + 2, 66, 16, Justification::centredRight);
+
+        // version footer text
+        g.setFont (Font (FontOptions (CT::fMicro)));
+        g.setColour (CT::textDim);
+        g.drawText ("AmpHead Custom by JCConcepcion v0.1.0  -  PROTOTYPE",
+                    0, bY + barH - 13, W, 11, Justification::centred);
+    }
+
+    // No-IR warning. Drawn last, full width under the header, so nothing paints
+    // over it. Without a cab IR the signal is a raw head with no speaker: all fizz
+    // above ~4 kHz, which is easily mistaken for a broken amp.
+    if (noIRLoaded)
+    {
+        const int byT = hdrH - 6, byH = 30;
+        g.setColour (Colour (0xfffb923c).withAlpha (0.16f));
+        g.fillRect (0, byT, W, byH);
+        g.setColour (Colour (0xfffb923c));
+        g.fillRect (0, byT, W, 2);
+        g.fillRect (0, byT + byH - 2, W, 2);
+
+        g.setFont (Font (FontOptions (CT::fPanel, Font::bold)));
+        g.drawText ("NO IR LOADED  -  LOAD A CABINET IR OR THE AMP WILL NOT SOUND RIGHT",
+                    0, byT, W, byH, Justification::centred);
+    }
+}
+
+//==============================================================================
+// resized
+void CopilotToneAudioProcessorEditor::resized()
+{
+    const int W    = getWidth();
+    const int H    = getHeight();
+    const int hdrH = 80;
+    const int barH = 38;
+    const int kpY  = hdrH + 8;
+    const int kpH  = 218;
+    const int eqY  = kpY + kpH + 8;
+    const int eqH  = 88;
+    const int ftrY = eqY + eqH + 8;
+
+    // header
+    {
+        // Channel buttons: three equal buttons on the right, with room reserved
+        // for the gear icon.
+        const int btnW   = 104;  // each button width
+        const int btnH   = 36;   // button height
+        const int btnGap = 4;    // gap between buttons
+        const int gearW  = 32;   // gear icon area
+        const int bY     = (hdrH - btnH) / 2 - 6;  // vertically centred in top half
+        const int rightEdge = W - 14;
+        // The gear icon is drawn in paint() at rightEdge - gearW.
+        const int btnAreaRight = rightEdge - gearW - 10;
+        const int btnAreaLeft  = btnAreaRight - (3 * btnW + 2 * btnGap);
+        for (int i = 0; i < 3; ++i)
+            chBtn[i].setBounds (btnAreaLeft + i * (btnW + btnGap), bY, btnW, btnH);
+
+        // BRIGHT - second row below channel buttons, right-aligned with LEAD
+        const int leadBtnX = btnAreaLeft + 2 * (btnW + btnGap);
+        brightBtn.setBounds (leadBtnX, bY + btnH + 5, btnW, 22);
+    }
+
+    // knob row
+    {
+        auto row = juce::Rectangle<int> (22, kpY + 10, W - 44, kpH - 16);
+        const int cw = row.getWidth() / 8, lH = 16;
+        struct KP { juce::Slider& s; juce::Label& l; };
+        KP kp[] = {
+            { gainSlider, gainLabel }, { charSlider, charLabel },
+            { bassSlider, bassLabel }, { midSlider,  midLabel  },
+            { trebleSlider, trebleLabel }, { presSlider, presLabel },
+            { masterSlider, masterLabel }, { outSlider, outLabel },
+        };
+        for (auto& p : kp)
+        {
+            auto col = row.removeFromLeft (cw);
+            p.l.setBounds (col.removeFromBottom (lH));
+            p.s.setBounds (col.reduced (10, 2));
+        }
+    }
+
+    // graphic EQ strip
+    {
+        const int mg   = 14;
+        const int btnW = 54;
+        const int titleW = 226;                      // legend + the two topology combos
+        const int x0   = mg + titleW;
+        const int avail = W - x0 - mg - btnW - 10;
+        const int cw   = avail / 5;
+        for (int i = 0; i < 5; ++i)
+        {
+            const int cx = x0 + i * cw;
+            eqLabel [i].setBounds (cx, eqY + 4, cw, 14);
+            eqSlider[i].setBounds (cx + cw / 2 - 26, eqY + 18, 52, eqH - 24);
+        }
+        eqOnBtn.setBounds (W - mg - btnW, eqY + eqH / 2 - 14, btnW, 28);
+
+        // Topology switches under the GRAPHIC EQ legend, inside the same panel.
+        const int cbW = 96, cbH = 20;
+        stackPosLabel.setBounds (26, eqY + 46, 40, 14);
+        stackPosBox  .setBounds (26, eqY + 60, cbW, cbH);
+        rectLabel    .setBounds (26 + cbW + 10, eqY + 46, 40, 14);
+        rectBox      .setBounds (26 + cbW + 10, eqY + 60, cbW, cbH);
+    }
+
+    // footer
+    {
+        const int mg  = 14;
+        const int gW  = 196;
+        const int pfW = 336;
+        const int irW = W - mg * 2 - gW - pfW - 16;
+        const int gX  = mg;
+        const int irX = gX + gW + 8;
+        const int pfX = irX + irW + 8;
+        const int pY  = ftrY + 8;
+        const int pH  = H - barH - pY - 4;
+        const int rTop = pY + 40;
+
+        // Noise Gate knobs. kH is fixed so the slider textbox, which takes the last
+        // 16 px of the bounds, clears the separate label placed below it.
+        {
+            const int kW = (gW - 20) / 2;
+            const int kH = 148;   // knob+textbox height (textbox = last 16px inside)
+            const int lH = 14;
+            gateThreshSlider.setBounds  (gX + 8,       rTop,         kW, kH);
+            gateThreshLabel.setBounds   (gX + 8,       rTop + kH + 4, kW, lH);
+            gateReleaseSlider.setBounds (gX + 10 + kW, rTop,         kW, kH);
+            gateReleaseLabel.setBounds  (gX + 10 + kW, rTop + kH + 4, kW, lH);
+            // ON/OFF toggle in the panel header (right side)
+            gateOnBtn.setBounds (gX + gW - 52, pY + 11, 42, 20);
+        }
+
+        // IR Loader
+        {
+            // file name labels and folder buttons
+            const int fnX = irX + 46, fnW = irW / 2 - 62;
+            irANameLabel.setBounds (fnX, rTop,      fnW, 22);
+            irAFolderBtn.setBounds (fnX + fnW + 4,  rTop,      22, 22);
+            irBNameLabel.setBounds (fnX, rTop + 28, fnW, 22);
+            irBFolderBtn.setBounds (fnX + fnW + 4,  rTop + 28, 22, 22);
+
+            // IR reminder - under the two file rows, within the left half.
+            irHintLabel.setBounds (irX + 12, rTop + 58, irW / 2 - 16, 16);
+
+            // BYPASS IR button - top right of IR header row
+            bypIRBtn.setBounds (irX + irW - 90, pY + 10, 84, 22);
+
+            // BLEND knob - centered in right half
+            const int blendAreaCX = irX + irW / 2 + (irW / 2) / 2;
+            const int kSz = 72;
+            const int kX  = blendAreaCX - kSz / 2;
+            const int kY  = rTop + 6;
+            irMixKnob.setBounds  (kX, kY, kSz, kSz);
+            irMixLabel.setBounds (kX, kY + kSz + 2, kSz, 14);
+
+            // A/B blend slider
+            const int slY = pY + pH - 22;
+            const int slX = blendAreaCX - 74;
+            irBlendSlider.setBounds (slX, slY, 148, 18);
+        }
+
+        // Post FX
+        {
+            // Three stacked rows: caption (+ type dropdown) on the left, three
+            // knobs on the right.  REVERB = Mix/Decay/Tone, DELAY = Mix/Time/Fdbk,
+            // MODULATION = Detune/Chorus/Rate (no dropdown).
+            const int comboW = 150;
+            const int knobsX = pfX + 168;
+            const int knobsW = pfW - 168 - 10;
+            const int colW   = knobsW / 3;
+            const int kSz    = 46;     // knob diameter
+            const int lH     = 11;     // caption height
+
+            const auto placeRow = [&] (int secY, juce::Label& cap, juce::ComboBox* box,
+                                       juce::Slider& k0, juce::Label& l0,
+                                       juce::Slider& k1, juce::Label& l1,
+                                       juce::Slider& k2, juce::Label& l2)
+            {
+                cap.setBounds (pfX + 12, secY - 2, 120, 12);
+                if (box != nullptr) box->setBounds (pfX + 12, secY + 13, comboW, 22);
+
+                const int kY = secY + 1;
+                juce::Slider* ks[3] = { &k0, &k1, &k2 };
+                juce::Label*  ls[3] = { &l0, &l1, &l2 };
+                for (int j = 0; j < 3; ++j)
+                {
+                    const int cx = knobsX + colW * j + colW / 2;
+                    ks[j]->setBounds (cx - kSz / 2, kY, kSz, kSz);
+                    ls[j]->setBounds (cx - colW / 2, kY + kSz, colW, lH);
+                }
+            };
+
+            const int sAY = pY + 38;
+            placeRow (sAY, reverbLabel, &reverbTypeBox,
+                      reverbMixKnob,   reverbMixLabel,
+                      reverbDecayKnob, reverbDecayLabel,
+                      reverbToneKnob,  reverbToneLabel);
+
+            const int sBY = sAY + 62;
+            placeRow (sBY, delayLabel, &delayTypeBox,
+                      delayMixKnob,  delayMixLabel,
+                      delayTimeKnob, delayTimeLabel,
+                      delayFbKnob,   delayFbLabel);
+
+            const int sCY = sBY + 62;
+            placeRow (sCY, modLabel, nullptr,
+                      modDetuneKnob, modDetuneLabel,
+                      modChorusKnob, modChorusLabel,
+                      modRateKnob,   modRateLabel);
+        }
+    }
+
+    // bottom bar
+    {
+        const int bY = H - barH;
+        oversamplingBox.setBounds (W / 2 - 118, bY + 7, 72, 20);
+        qualityBox.setBounds      (W / 2 + 60,  bY + 7, 68, 20);
+    }
+}
