@@ -114,6 +114,14 @@ reused. All rights reserved.
 
 ---
 
+## History
+
+Started in May 2026 and developed locally for the first three months, which is why the
+history here begins with an import rather than the first line of code. Published in August
+2026.
+
+---
+
 ## Status
 
 Prototype. The amp is voiced and the suite passes, but this is a personal instrument rather
