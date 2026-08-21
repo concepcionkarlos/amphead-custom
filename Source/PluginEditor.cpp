@@ -859,16 +859,14 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
 {
     using namespace juce;
 
-    const int W     = getWidth();
-    const int H     = getHeight();
-    const int hdrH  = 80;
-    const int barH  = 38;
-    const int kpY   = hdrH + 8;    // knob panel y
-    const int kpH   = 218;         // knob panel height
-    const int eqY   = kpY + kpH + 8;   // graphic EQ strip
-    const int eqH   = 88;
-    const int ftrY  = eqY + eqH + 8;
-    const int ftrH  = H - barH - ftrY;
+    // Geometry comes from Layout (PluginEditor.h), shared with resized(). These
+    // locals keep the names the rest of the function already uses.
+    const Layout L = Layout::compute (getWidth(), getHeight());
+    const int W    = L.W,    H    = L.H;
+    const int hdrH = L.hdrH, barH = L.barH;
+    const int kpY  = L.kpY,  kpH  = L.kpH;
+    const int eqY  = L.eqY,  eqH  = L.eqH;
+    const int ftrY = L.ftrY, ftrH = L.ftrH;
 
     // body background
     g.setColour (CT::bg);
@@ -1059,8 +1057,8 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         // NOTE: gap and cw are duplicated from resized(). If you change one, you MUST
         // change the other or the lines will drift off the gaps.
         {
-            const int gap = 44;
-            const int cw  = (W - 44 - 2 * gap) / 8;
+            const int gap = L.knobGap;
+            const int cw  = L.knobW;
             const float sx[2] = { 22.f + cw * 2.f + gap * 0.5f,
                                   22.f + cw * 6.f + gap * 1.5f };
 
@@ -1130,15 +1128,10 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         g.fillRect (0, ftrY + 1, W, 1);
 
         // panel geometry
-        const int mg  = 14;
-        const int gW  = 196;     // noise gate panel
-        const int pfW = 336;     // post fx panel
-        const int irW = W - mg * 2 - gW - pfW - 16;
-        const int gX  = mg;
-        const int irX = gX + gW + 8;
-        const int pfX = irX + irW + 8;
-        const int pY  = ftrY + 8;
-        const int pH  = ftrH - 12;
+        const int gW  = L.gW,  pfW = L.pfW;
+        const int irW = L.irW, gX  = L.gX;
+        const int irX = L.irX, pfX = L.pfX;
+        const int pY  = L.pY,  pH  = L.pH;
 
         // draw sub-panel boxes
         const auto drawPanel = [&] (int px, int pw)
@@ -1182,7 +1175,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         drawHdr (pfX, pfW, "POST FX");
 
         // IR section
-        const int rTop = pY + 40;
+        const int rTop = L.rTop;
 
         // "IR A" / "IR B" text labels
         g.setFont (Font (FontOptions (CT::fLabel, Font::bold)));
@@ -1322,15 +1315,11 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
 // resized
 void CopilotToneAudioProcessorEditor::resized()
 {
-    const int W    = getWidth();
-    const int H    = getHeight();
-    const int hdrH = 80;
-    const int barH = 38;
-    const int kpY  = hdrH + 8;
-    const int kpH  = 218;
-    const int eqY  = kpY + kpH + 8;
-    const int eqH  = 88;
-    const int ftrY = eqY + eqH + 8;
+    const Layout L = Layout::compute (getWidth(), getHeight());
+    const int W    = L.W,    H    = L.H;
+    const int hdrH = L.hdrH, barH = L.barH;
+    const int kpY  = L.kpY,  kpH  = L.kpH;
+    const int eqY  = L.eqY,  eqH  = L.eqH;
 
     // header
     {
@@ -1359,8 +1348,8 @@ void CopilotToneAudioProcessorEditor::resized()
     {
         // +20 at the top reserves the band where paint() writes the group captions.
         auto row = juce::Rectangle<int> (22, kpY + 30, W - 44, kpH - 36);
-        const int gap = 44;                              // space between groups
-        const int cw  = (row.getWidth() - 2 * gap) / 8;  // 8 knobs share what is left
+        const int gap = L.knobGap;
+        const int cw  = L.knobW;
         const int lH  = 16;
 
         struct KP { juce::Slider& s; juce::Label& l; };
@@ -1412,16 +1401,11 @@ void CopilotToneAudioProcessorEditor::resized()
 
     // footer
     {
-        const int mg  = 14;
-        const int gW  = 196;
-        const int pfW = 336;
-        const int irW = W - mg * 2 - gW - pfW - 16;
-        const int gX  = mg;
-        const int irX = gX + gW + 8;
-        const int pfX = irX + irW + 8;
-        const int pY  = ftrY + 8;
-        const int pH  = H - barH - pY - 4;
-        const int rTop = pY + 40;
+        const int gW  = L.gW,  pfW = L.pfW;
+        const int irW = L.irW, gX  = L.gX;
+        const int irX = L.irX, pfX = L.pfX;
+        const int pY  = L.pY,  pH  = L.pH;
+        const int rTop = L.rTop;
 
         // Noise Gate knobs. kH is fixed so the slider textbox, which takes the last
         // 16 px of the bounds, clears the separate label placed below it.

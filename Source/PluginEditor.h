@@ -9,6 +9,61 @@
 #include "PluginProcessor.h"
 
 //==============================================================================
+// One source of truth for the window geometry.
+//
+// paint() and resized() used to declare these numbers independently: the same
+// constants, written twice, in two functions that never compare notes. Moving a
+// section meant editing both, and any mismatch showed up as a panel drawn away
+// from the controls it is meant to contain. pH was already being computed by two
+// different formulas that happened to agree.
+//
+// Both functions read this now. Change a number here and the panel and its
+// contents move together.
+struct Layout
+{
+    int W, H;
+    int hdrH, barH;
+    int kpY, kpH;            // amp knob panel
+    int eqY, eqH;            // graphic EQ strip
+    int ftrY, ftrH;          // footer band
+    int mg, gW, gX;          // margin, noise gate panel
+    int irW, irX;            // IR loader panel
+    int pfW, pfX;            // post FX panel
+    int pY, pH, rTop;        // footer panel top, height, first control row
+    int knobGap, knobW;      // amp row: gap between groups, column width
+
+    static Layout compute (int w, int h)
+    {
+        Layout L;
+        L.W    = w;
+        L.H    = h;
+        L.hdrH = 80;
+        L.barH = 38;
+        L.kpY  = L.hdrH + 8;
+        L.kpH  = 218;
+        L.eqY  = L.kpY + L.kpH + 8;
+        L.eqH  = 88;
+        L.ftrY = L.eqY + L.eqH + 8;
+        L.ftrH = L.H - L.barH - L.ftrY;
+
+        L.mg   = 14;
+        L.gW   = 196;
+        L.pfW  = 336;
+        L.irW  = L.W - L.mg * 2 - L.gW - L.pfW - 16;
+        L.gX   = L.mg;
+        L.irX  = L.gX + L.gW + 8;
+        L.pfX  = L.irX + L.irW + 8;
+        L.pY   = L.ftrY + 8;
+        L.pH   = L.ftrH - 12;
+        L.rTop = L.pY + 40;
+
+        L.knobGap = 44;
+        L.knobW   = (L.W - 44 - 2 * L.knobGap) / 8;
+        return L;
+    }
+};
+
+//==============================================================================
 class AmpLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
