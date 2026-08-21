@@ -559,8 +559,10 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
     }
 
     // IR reminder - shown (in amber) only while no IR is loaded; cleared once one is.
-    irHintLabel.setText ("Don't forget to load an IR!", juce::dontSendNotification);
-    irHintLabel.setFont (juce::Font (juce::FontOptions (CT::fMicro, juce::Font::italic)));
+    // The only no-IR warning in the interface. It lives inside the cabinet panel,
+    // where the fix is, instead of shouting from a banner across the whole window.
+    irHintLabel.setText ("Load a cabinet IR", juce::dontSendNotification);
+    irHintLabel.setFont (juce::Font (juce::FontOptions (CT::fLabel, juce::Font::bold)));
     irHintLabel.setColour (juce::Label::textColourId, CT::amber);
     irHintLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (irHintLabel);
@@ -753,12 +755,6 @@ void CopilotToneAudioProcessorEditor::timerCallback()
                     || audioProcessor.irSection.irBLoaded.load();
     if (irHintLabel.isVisible() == anyIR)
         irHintLabel.setVisible (! anyIR);
-
-    if (noIRLoaded == anyIR)          // state flipped
-    {
-        noIRLoaded = ! anyIR;
-        repaint (0, 74, getWidth(), 34);   // just the banner strip
-    }
 
     // Keep the OVERSAMPLING + QUALITY combos mirrored to the shared osFactor.
     const int osi = juce::jlimit (0, 3,
@@ -1320,22 +1316,6 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
                     0, bY + barH - 13, W, 11, Justification::centred);
     }
 
-    // No-IR warning. Drawn last, full width under the header, so nothing paints
-    // over it. Without a cab IR the signal is a raw head with no speaker: all fizz
-    // above ~4 kHz, which is easily mistaken for a broken amp.
-    if (noIRLoaded)
-    {
-        const int byT = hdrH - 6, byH = 30;
-        g.setColour (Colour (0xfffb923c).withAlpha (0.16f));
-        g.fillRect (0, byT, W, byH);
-        g.setColour (Colour (0xfffb923c));
-        g.fillRect (0, byT, W, 2);
-        g.fillRect (0, byT + byH - 2, W, 2);
-
-        g.setFont (Font (FontOptions (CT::fPanel, Font::bold)));
-        g.drawText ("NO IR LOADED  -  LOAD A CABINET IR OR THE AMP WILL NOT SOUND RIGHT",
-                    0, byT, W, byH, Justification::centred);
-    }
 }
 
 //==============================================================================
@@ -1467,7 +1447,7 @@ void CopilotToneAudioProcessorEditor::resized()
             irBFolderBtn.setBounds (fnX + fnW + 4,  rTop + 28, 22, 22);
 
             // IR reminder - under the two file rows, within the left half.
-            irHintLabel.setBounds (irX + 12, rTop + 58, irW / 2 - 16, 16);
+            irHintLabel.setBounds (irX + 12, rTop + 58, irW / 2 - 16, 18);
 
             // BYPASS IR button - top right of IR header row
             bypIRBtn.setBounds (irX + irW - 90, pY + 10, 84, 22);

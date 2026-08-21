@@ -75,10 +75,6 @@ private:
     float inPeakHold = -120.f;
     int   inPeakWait = 0;
 
-    // Drives the "no IR loaded" banner. Cached so the timer repaints that strip
-    // only when the state flips, rather than on every tick.
-    bool noIRLoaded = true;
-
     // Header
     juce::TextButton chBtn[3];
     juce::TextButton brightBtn;
