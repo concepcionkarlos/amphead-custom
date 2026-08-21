@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="Z5hhuN" name="CustomAmpHead JConcepcion" projectType="audioplug"
-              useAppConfig="0" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+              useAppConfig="0" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1"
+              pluginName="AmpHead Custom" pluginDesc="AmpHead Custom" pluginManufacturer="JCConcepcion"
+              companyName="CustomAmpHead">
   <MAINGROUP id="UsLwQd" name="CustomAmpHead JConcepcion">
     <GROUP id="{71204D06-BF1D-F65F-14CE-996005AFB206}" name="Source">
       <FILE id="X9RbN4" name="PluginProcessor.cpp" compile="1" resource="0"
@@ -33,11 +35,10 @@
   </MODULES>
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
   <EXPORTFORMATS>
-    <XCODE_MAC targetFolder="Builds/MacOSX" microphonePermissionNeeded="1"
-               microphonePermissionsText="AmpHead Custom needs audio input access to process your guitar signal.">
+    <XCODE_MAC targetFolder="Builds/MacOSX" microphonePermissionNeeded="1" microphonePermissionsText="AmpHead Custom needs audio input access to process your guitar signal.">
       <CONFIGURATIONS>
-        <CONFIGURATION isDebug="1" name="Debug" targetName="CopilotTone"/>
-        <CONFIGURATION isDebug="0" name="Release" targetName="CopilotTone"/>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="AmpHead Custom"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="AmpHead Custom"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_audio_basics" path="../../Dev/JUGE/modules"/>

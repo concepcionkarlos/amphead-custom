@@ -19,7 +19,7 @@ import sys
 import numpy as np
 from pedalboard import load_plugin
 
-VST3 = "/Users/juanconcepcionametller/Library/Audio/Plug-Ins/VST3/CopilotTone.vst3"
+VST3 = "/Users/juanconcepcionametller/Library/Audio/Plug-Ins/VST3/AmpHead Custom.vst3"
 SR = 48000
 CHANNELS = {0: "CLEAN", 1: "CRUNCH", 2: "LEAD"}
 

@@ -3,12 +3,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist>
   <dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>AmpHead Custom needs audio input access to process your guitar signal.</string>
     <key>CFBundleExecutable</key>
     <string>${EXECUTABLE_NAME}</string>
     <key>CFBundleIconFile</key>
     <string></string>
     <key>CFBundleIdentifier</key>
-    <string>com.yourcompany.CustomAmpHeadJConcepcion</string>
+    <string>com.CustomAmpHead.CustomAmpHeadJConcepcion</string>
     <key>CFBundleName</key>
     <string>CustomAmpHead JConcepcion</string>
     <key>CFBundleDisplayName</key>
@@ -29,9 +31,9 @@
     <array>
       <dict>
         <key>name</key>
-        <string>yourcompany: CustomAmpHead JConcepcion</string>
+        <string>JCConcepcion: AmpHead Custom</string>
         <key>description</key>
-        <string>CustomAmpHead JConcepcion</string>
+        <string>AmpHead Custom</string>
         <key>factoryFunction</key>
         <string>CustomAmpHeadJConcepcionAUFactory</string>
         <key>manufacturer</key>
