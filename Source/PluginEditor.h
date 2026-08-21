@@ -24,7 +24,10 @@ struct Layout
     int W, H;
     int hdrH, barH;
     int kpY, kpH;            // amp knob panel
+    int knobRowY, knobRowH;  // the 8 knobs inside it
+    int topoY;               // tone-stack / rectifier switches, below the knobs
     int eqY, eqH;            // graphic EQ strip
+    int eqX0, eqBandW;       // first band x, band column width
     int ftrY, ftrH;          // footer band
     int mg, gW, gX;          // margin, noise gate panel
     int irW, irX;            // IR loader panel
@@ -39,8 +42,14 @@ struct Layout
         L.H    = h;
         L.hdrH = 80;
         L.barH = 38;
-        L.kpY  = L.hdrH + 8;
-        L.kpH  = 218;
+        L.kpY      = L.hdrH + 8;
+        // The panel is as tall as its contents, not a number someone has to keep in
+        // sync: 30 for the group captions, the knob row, then the topology switches.
+        L.knobRowY = L.kpY + 30;
+        L.knobRowH = 182;
+        L.topoY    = L.knobRowY + L.knobRowH + 2;
+        L.kpH      = (L.topoY - L.kpY) + 36;
+
         L.eqY  = L.kpY + L.kpH + 8;
         L.eqH  = 88;
         L.ftrY = L.eqY + L.eqH + 8;
@@ -59,6 +68,13 @@ struct Layout
 
         L.knobGap = 44;
         L.knobW   = (L.W - 44 - 2 * L.knobGap) / 8;
+
+        // Graphic EQ. The legend on the left used to reserve 226 px for itself plus
+        // the two topology combos; those now live in the amp panel, so the bands get
+        // the space back.
+        const int eqBtnW = 54, eqTitleW = 130;
+        L.eqX0    = L.mg + eqTitleW;
+        L.eqBandW = (L.W - L.eqX0 - L.mg - eqBtnW - 10) / 5;
         return L;
     }
 };

@@ -360,7 +360,7 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
       modChorusAtt   (p.apvts, "modChorus",   modChorusKnob),
       modRateAtt     (p.apvts, "modRate",     modRateKnob)
 {
-    setSize (1020, 696);
+    setSize (1020, 728);
     setLookAndFeel (&laf);
 
     // channel buttons
@@ -576,8 +576,9 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
     };
     styleLabel (irMixLabel, "BLEND");
     irMixKnob.setTooltip ("Cabinet IR wet/dry blend");
-    addAndMakeVisible (irMixKnob);
-    addAndMakeVisible (irMixLabel);
+    // Not shown. The cab blend is left at 100% in practice, and the panel reads
+    // better without it. The parameter and its attachment stay, so a host can
+    // still automate irMix and saved sessions still recall it.
 
     irAFolderBtn.setTooltip ("Load impulse response A (.wav/.aif)");
     irBFolderBtn.setTooltip ("Load impulse response B (.wav/.aif)");
@@ -1025,7 +1026,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             // flat is hard to find.
             g.setColour (CT::panelRim.withAlpha (0.55f));
             const int mid = eqY + 18 + (eqH - 24 - 15) / 2;
-            g.fillRect (254, mid, W - 254 - 78, 1);
+            g.fillRect (L.eqX0 + 4, mid, W - L.eqX0 - 4 - 78, 1);
         }
 
         const Rectangle<float> PR (14.f, (float) kpY, (float)(W - 28), (float) kpH);
@@ -1199,13 +1200,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         g.setColour (CT::divider.withAlpha (0.6f));
         g.fillRect ((float) divX, (float)(pY + 12), 1.f, (float)(pH - 24));
 
-        // "BLEND" header text above knob
         const int blendAreaCX = irX + irW / 2 + (irW / 2) / 2;
-        g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
-        g.setColour (CT::textLow);
-        const auto blt = juce::String::fromUTF8 ("\xe2\x80\xa2");
-        g.drawText (blt + juce::String (" BLEND ") + blt,
-                    blendAreaCX - 44, pY + 36, 88, 12, Justification::centred);
 
         // A / B slider end labels
         const int slY = pY + pH - 24;
@@ -1318,7 +1313,6 @@ void CopilotToneAudioProcessorEditor::resized()
     const Layout L = Layout::compute (getWidth(), getHeight());
     const int W    = L.W,    H    = L.H;
     const int hdrH = L.hdrH, barH = L.barH;
-    const int kpY  = L.kpY,  kpH  = L.kpH;
     const int eqY  = L.eqY,  eqH  = L.eqH;
 
     // header
@@ -1347,7 +1341,7 @@ void CopilotToneAudioProcessorEditor::resized()
     // The gap does the grouping; the divider lines drawn in paint() only confirm it.
     {
         // +20 at the top reserves the band where paint() writes the group captions.
-        auto row = juce::Rectangle<int> (22, kpY + 30, W - 44, kpH - 36);
+        auto row = juce::Rectangle<int> (22, L.knobRowY, W - 44, L.knobRowH);
         const int gap = L.knobGap;
         const int cw  = L.knobW;
         const int lH  = 16;
@@ -1372,31 +1366,31 @@ void CopilotToneAudioProcessorEditor::resized()
                 kp[k].s.setBounds (col.reduced (10, 2));
             }
         }
+
+        // Topology switches, under the group each one belongs to: the tone stack
+        // position under TONE, the rectifier under OUTPUT. They are amp controls,
+        // not EQ controls, which is where they used to sit.
+        const int cbW = 96, cbH = 20;
+        const int toneCX   = 22 + cw * 4 + gap;          // centre of the TONE group
+        const int outputCX = 22 + cw * 7 + gap * 2;      // centre of the OUTPUT group
+        stackPosLabel.setBounds (toneCX   - cbW / 2, L.topoY,      cbW, 12);
+        stackPosBox  .setBounds (toneCX   - cbW / 2, L.topoY + 13, cbW, cbH);
+        rectLabel    .setBounds (outputCX - cbW / 2, L.topoY,      cbW, 12);
+        rectBox      .setBounds (outputCX - cbW / 2, L.topoY + 13, cbW, cbH);
     }
 
 
     // graphic EQ strip
     {
-        const int mg   = 14;
         const int btnW = 54;
-        const int titleW = 226;                      // legend + the two topology combos
-        const int x0   = mg + titleW;
-        const int avail = W - x0 - mg - btnW - 10;
-        const int cw   = avail / 5;
+        const int cw   = L.eqBandW;
         for (int i = 0; i < 5; ++i)
         {
-            const int cx = x0 + i * cw;
+            const int cx = L.eqX0 + i * cw;
             eqLabel [i].setBounds (cx, eqY + 4, cw, 14);
             eqSlider[i].setBounds (cx + cw / 2 - 26, eqY + 18, 52, eqH - 24);
         }
-        eqOnBtn.setBounds (W - mg - btnW, eqY + eqH / 2 - 14, btnW, 28);
-
-        // Topology switches under the GRAPHIC EQ legend, inside the same panel.
-        const int cbW = 96, cbH = 20;
-        stackPosLabel.setBounds (26, eqY + 46, 40, 14);
-        stackPosBox  .setBounds (26, eqY + 60, cbW, cbH);
-        rectLabel    .setBounds (26 + cbW + 10, eqY + 46, 40, 14);
-        rectBox      .setBounds (26 + cbW + 10, eqY + 60, cbW, cbH);
+        eqOnBtn.setBounds (W - L.mg - btnW, eqY + eqH / 2 - 14, btnW, 28);
     }
 
     // footer
@@ -1436,13 +1430,7 @@ void CopilotToneAudioProcessorEditor::resized()
             // BYPASS IR button - top right of IR header row
             bypIRBtn.setBounds (irX + irW - 90, pY + 10, 84, 22);
 
-            // BLEND knob - centered in right half
             const int blendAreaCX = irX + irW / 2 + (irW / 2) / 2;
-            const int kSz = 72;
-            const int kX  = blendAreaCX - kSz / 2;
-            const int kY  = rTop + 6;
-            irMixKnob.setBounds  (kX, kY, kSz, kSz);
-            irMixLabel.setBounds (kX, kY + kSz + 2, kSz, 14);
 
             // A/B blend slider
             const int slY = pY + pH - 22;
