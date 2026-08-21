@@ -245,8 +245,12 @@ void AmpEngine::process (float* data, int numSamples,
 
     // V1B: cold-biased second triode. CH3 drives hardest for a dense, sustaining lead.
     static constexpr float kV1BDriveBase[3] = { 0.50f, 1.42f, 1.55f };
-    const float v1bDrive = kV1BDriveBase[ci] * (1.4f + gainW * (1.7f + gainW * 2.7f));
-
+    // DRIVE (char) pushes the LATE stages while GAIN pushes the first one, so the two
+    // controls add saturation at different points in the cascade instead of duplicating
+    // each other: GAIN buys early bite, DRIVE buys density further down.
+    const float charDrive = 0.75f + 0.65f * charNorm;
+    const float v1bDrive = kV1BDriveBase[ci] * charDrive
+                         * (1.4f + gainW * (1.7f + gainW * 2.7f));
     // Input front-end at native SR
     for (int n = 0; n < numSamples; ++n)
     {
@@ -1510,14 +1514,19 @@ namespace {
         return g1 * dlRead (buf, write, mask, baseDt + ph * window)
              + g2 * dlRead (buf, write, mask, baseDt + p2 * window);
     }
-    // Schroeder allpass (Freeverb form) over a power-of-two buffer with an
+    // Schroeder allpass over a power-of-two buffer with an
     // integer length. Advances 'write'. g is the diffusion coefficient.
     static inline float apProcess (float* buf, int& write, int mask, int len, float x, float g)
     {
         const int   r  = (write - len + mask + 1) & mask;
         const float bo = buf[r];
-        const float y  = -x + bo;
-        buf[write] = x + bo * g;
+        const float y  = -g * x + bo;
+        // Feed the OUTPUT back, not the delayed sample. The Freeverb form that was
+        // here is not a true allpass: its DC gain is g/(1-g), which is unity at the
+        // g = 0.5 used for diffusion but 1.5 at the g = 0.6 the spring cascade uses -
+        // and eight of those in series is +28 dB. This form is unity at every
+        // frequency, which is what an allpass is for.
+        buf[write] = x + g * y;
         write = (write + 1) & mask;
         return y;
     }
@@ -1891,15 +1900,19 @@ void Modulation::process (juce::AudioBuffer<float>& buffer, int numSamples,
     const float detTrim  = 0.55f;            // how far back the detune voice sits
     const float chorTrim = 0.60f;
 
-    // Hidden background detune ensemble: three stacked voices at growing widths,
-    // alternating L/R direction, always on and never UI-exposed.
+    // Background detune ensemble: three stacked voices at growing widths,
+    // alternating L/R direction, scaled by the DETUNE control.
     const float rA = std::pow (2.f,  8.f / 1200.f);    // +/- 8 cents
     const float rB = std::pow (2.f, 16.f / 1200.f);    // +/- 16 cents
     const float rC = std::pow (2.f, 27.f / 1200.f);    // +/- 27 cents
     const float incAL = (1.f - rA)       / window, incAR = (1.f - 1.f / rA) / window;  // A: L up / R down
     const float incBL = (1.f - 1.f / rB) / window, incBR = (1.f - rB)       / window;  // B: L down / R up
     const float incCL = (1.f - rC)       / window, incCR = (1.f - 1.f / rC) / window;  // C: L up / R down
-    const float bgAB = 0.11f, bgBB = 0.07f, bgCB = 0.045f;   // layer blends
+    // These blends were fixed, so 22% of the signal was pitch-shifted copies whatever
+    // the knob said - thickening the tone at the cost of transient definition. The
+    // floor keeps a trace of ensemble at zero; the knob buys the rest.
+    const float bgAmt = 0.15f + 0.85f * detune;
+    const float bgAB = 0.11f * bgAmt, bgBB = 0.07f * bgAmt, bgCB = 0.045f * bgAmt;
 
     float* L = buffer.getWritePointer (0);
     float* R = stereo ? buffer.getWritePointer (1) : nullptr;
