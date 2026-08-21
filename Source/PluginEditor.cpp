@@ -188,8 +188,54 @@ void AmpLookAndFeel::drawLinearSlider (juce::Graphics& g,
                                         juce::Slider::SliderStyle style,
                                         juce::Slider&)
 {
-    if (style != juce::Slider::LinearHorizontal) return;
     using namespace juce;
+
+    // Vertical branch. This did not exist: the method returned immediately for
+    // anything that was not LinearHorizontal, and overriding a LookAndFeel method
+    // replaces the base implementation rather than adding to it - so the five EQ
+    // faders were live, draggable and completely invisible.
+    if (style == juce::Slider::LinearVertical)
+    {
+        const float cx  = (float) x + (float) w * 0.5f;
+        const float top = (float) y;
+        const float bot = (float) (y + h);
+        const float mid = (top + bot) * 0.5f;
+        const float sw  = 6.f;                       // slot width
+
+        // recessed slot
+        g.setColour (Colour (0xff08090e));
+        g.fillRoundedRectangle (cx - sw * 0.5f, top, sw, bot - top, 3.f);
+        g.setColour (CT::divider);
+        g.drawRoundedRectangle (cx - sw * 0.5f, top, sw, bot - top, 3.f, 0.8f);
+
+        // 0 dB mark, wider than the slot so it reads as a scale and not as dirt
+        g.setColour (CT::divider);
+        g.fillRect (cx - (float) w * 0.40f, mid - 0.5f, (float) w * 0.80f, 1.f);
+
+        // Fill from the centre out, not from the bottom: on a boost/cut control
+        // the eye should see how far from flat the band is, and in which direction.
+        if (std::abs (pos - mid) > 1.f)
+        {
+            const float t = jmin (pos, mid), b = jmax (pos, mid);
+            g.setColour (pos < mid ? CT::accentHi : CT::accent);
+            g.fillRoundedRectangle (cx - sw * 0.5f + 1.f, t, sw - 2.f, b - t, 2.f);
+        }
+
+        // cap
+        const float capW = jmin ((float) w, 26.f), capH = 13.f;
+        const Rectangle<float> cap (cx - capW * 0.5f, pos - capH * 0.5f, capW, capH);
+        ColourGradient cg (Colour (0xff3d4260), 0.f, cap.getY(),
+                           Colour (0xff191c2b), 0.f, cap.getBottom(), false);
+        g.setGradientFill (cg);
+        g.fillRoundedRectangle (cap, 2.5f);
+        g.setColour (Colour (0xff06070e));
+        g.drawRoundedRectangle (cap.reduced (0.5f), 2.5f, 1.f);
+        g.setColour (CT::accentHi);
+        g.fillRect (cap.getX() + 3.f, pos - 0.75f, cap.getWidth() - 6.f, 1.5f);
+        return;
+    }
+
+    if (style != juce::Slider::LinearHorizontal) return;
 
     const float ty = y + h * 0.5f, th = 4.f;
     const float rx = (float) x, rw = (float) w;
