@@ -1059,14 +1059,44 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         g.setColour (Colour (0xff2d3055).withAlpha (0.5f));
         g.fillRoundedRectangle (PR.reduced (1.5f, 1.5f).withHeight (2.f), 1.f);
 
-        // vertical separator after knob 5
+         // Two vertical separators, one centred in each gap of the 2 | 4 | 2 grouping.
+        // NOTE: gap and cw are duplicated from resized(). If you change one, you MUST
+        // change the other or the lines will drift off the gaps.
         {
-            const int colW = (W - 44) / 8;
-            const float sx = 22.f + colW * 5.f - 1.f;
-            g.setColour (CT::divider.withAlpha (0.55f));
-            g.fillRect (sx, PR.getY() + 12.f, 1.f, PR.getHeight() - 24.f);
-            g.setColour (CT::accent.withAlpha (0.06f));
-            g.fillRect (sx - 1.f, PR.getY() + 12.f, 3.f, PR.getHeight() - 24.f);
+            const int gap = 44;
+            const int cw  = (W - 44 - 2 * gap) / 8;
+            const float sx[2] = { 22.f + cw * 2.f + gap * 0.5f,
+                                  22.f + cw * 6.f + gap * 1.5f };
+
+            // Group captions. The gap alone does not read as grouping - 115 px inside
+            // a group against 159 px between them is only a 38% difference, which the
+            // eye does not resolve as separation. The caption is what makes it obvious.
+            {
+                const char* caps  [3] = { "PREAMP", "TONE", "OUTPUT" };
+                const int   startK[3] = { 0, 2, 6 };
+                const int   sizeK [3] = { 2, 4, 2 };
+
+                // textMid, one step above the textLow the knob labels use. A group
+                // caption sharing its members' weight flattens the hierarchy instead
+                // of building one.
+                g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
+                g.setColour (CT::textMid);
+                for (int gi = 0; gi < 3; ++gi)
+                {
+                    const int gx = 22 + cw * startK[gi] + gap * gi;
+                    const int gw = cw * sizeK[gi];
+                    g.drawText (caps[gi], gx, (int) PR.getY() + 10, gw, 14,
+                                Justification::centred);
+                }
+            }
+
+            for (float x : sx)
+            {
+                g.setColour (CT::divider.withAlpha (0.55f));
+                g.fillRect (x, PR.getY() + 12.f, 1.f, PR.getHeight() - 24.f);
+                g.setColour (CT::accent.withAlpha (0.06f));
+                g.fillRect (x - 1.f, PR.getY() + 12.f, 3.f, PR.getHeight() - 24.f);
+            }
         }
 
         // corner screws
@@ -1343,10 +1373,16 @@ void CopilotToneAudioProcessorEditor::resized()
         brightBtn.setBounds (leadBtnX, bY + btnH + 5, btnW, 22);
     }
 
-    // knob row
+    // knob row - three groups instead of eight equal columns.
+    // PREAMP (gain, drive) | TONE (bass, mid, treble, presence) | OUTPUT (master, out)
+    // The gap does the grouping; the divider lines drawn in paint() only confirm it.
     {
-        auto row = juce::Rectangle<int> (22, kpY + 10, W - 44, kpH - 16);
-        const int cw = row.getWidth() / 8, lH = 16;
+        // +20 at the top reserves the band where paint() writes the group captions.
+        auto row = juce::Rectangle<int> (22, kpY + 30, W - 44, kpH - 36);
+        const int gap = 44;                              // space between groups
+        const int cw  = (row.getWidth() - 2 * gap) / 8;  // 8 knobs share what is left
+        const int lH  = 16;
+
         struct KP { juce::Slider& s; juce::Label& l; };
         KP kp[] = {
             { gainSlider, gainLabel }, { charSlider, charLabel },
@@ -1354,13 +1390,21 @@ void CopilotToneAudioProcessorEditor::resized()
             { trebleSlider, trebleLabel }, { presSlider, presLabel },
             { masterSlider, masterLabel }, { outSlider, outLabel },
         };
-        for (auto& p : kp)
+
+        const int groupSize[3] = { 2, 4, 2 };
+        int k = 0;
+        for (int gi = 0; gi < 3; ++gi)
         {
-            auto col = row.removeFromLeft (cw);
-            p.l.setBounds (col.removeFromBottom (lH));
-            p.s.setBounds (col.reduced (10, 2));
+            if (gi > 0) row.removeFromLeft (gap);   // discard: this is the gap
+            for (int j = 0; j < groupSize[gi]; ++j, ++k)
+            {
+                auto col = row.removeFromLeft (cw);
+                kp[k].l.setBounds (col.removeFromBottom (lH));
+                kp[k].s.setBounds (col.reduced (10, 2));
+            }
         }
     }
+
 
     // graphic EQ strip
     {
