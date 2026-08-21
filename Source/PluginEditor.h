@@ -26,14 +26,20 @@ struct Layout
     int kpY, kpH;            // amp knob panel
     int knobRowY, knobRowH;  // the 8 knobs inside it
     int topoY;               // tone-stack / rectifier switches, below the knobs
-    int eqY, eqH;            // graphic EQ strip
+    int mg;                  // outer margin
+    int r2Y, r2H;            // row 2: CABINET | GRAPHIC EQ
+    int cabX, cabW;
+    int eqPX, eqPW;
     int eqX0, eqBandW;       // first band x, band column width
-    int ftrY, ftrH;          // footer band
-    int mg, gW, gX;          // margin, noise gate panel
-    int irW, irX;            // IR loader panel
-    int pfW, pfX;            // post FX panel
-    int pY, pH, rTop;        // footer panel top, height, first control row
+    int eqFadeY, eqFadeH;    // fader travel inside the EQ panel
+    int r3Y, r3H;            // row 3: GATE | FX
+    int gateX, gateW;
+    int fxX, fxW;
     int knobGap, knobW;      // amp row: gap between groups, column width
+
+    // The window is as tall as the bands, rather than a number kept in step by
+    // hand. setSize() calls this.
+    static int idealHeight();
 
     static Layout compute (int w, int h)
     {
@@ -41,7 +47,9 @@ struct Layout
         L.W    = w;
         L.H    = h;
         L.hdrH = 80;
-        L.barH = 38;
+        // 46, not 38: the bar carries two lines - meters, then the target
+        // reminder underneath. At 38 the second line was drawn past the window edge.
+        L.barH = 46;
         L.kpY      = L.hdrH + 8;
         // The panel is as tall as its contents, not a number someone has to keep in
         // sync: 30 for the group captions, the knob row, then the topology switches.
@@ -50,34 +58,45 @@ struct Layout
         L.topoY    = L.knobRowY + L.knobRowH + 2;
         L.kpH      = (L.topoY - L.kpY) + 36;
 
-        L.eqY  = L.kpY + L.kpH + 8;
-        L.eqH  = 88;
-        L.ftrY = L.eqY + L.eqH + 8;
-        L.ftrH = L.H - L.barH - L.ftrY;
+        L.mg = 14;
+        const int usable = L.W - L.mg * 2;
+        const int colGap = 8;
 
-        L.mg   = 14;
-        L.gW   = 196;
-        L.pfW  = 336;
-        L.irW  = L.W - L.mg * 2 - L.gW - L.pfW - 16;
-        L.gX   = L.mg;
-        L.irX  = L.gX + L.gW + 8;
-        L.pfX  = L.irX + L.irW + 8;
-        L.pY   = L.ftrY + 8;
-        L.pH   = L.ftrH - 12;
-        L.rTop = L.pY + 40;
+        // Row 2: CABINET | GRAPHIC EQ. Splitting the row is the whole point - a
+        // full-width strip 88 px tall cannot hold a vertical fader. Half the width
+        // and twice the height can.
+        L.r2Y  = L.kpY + L.kpH + 8;
+        L.r2H  = 160;
+        L.cabX = L.mg;
+        L.cabW = 420;
+        L.eqPX = L.cabX + L.cabW + colGap;
+        L.eqPW = usable - L.cabW - colGap;
+
+        L.eqX0    = L.eqPX + 20;
+        L.eqBandW = (L.eqPW - 40) / 5;
+        L.eqFadeY = L.r2Y + 52;
+        L.eqFadeH = L.r2H - 66;
+
+        // Row 3: GATE | FX.
+        L.r3Y   = L.r2Y + L.r2H + 8;
+        L.r3H   = 150;
+        L.gateX = L.mg;
+        L.gateW = 210;
+        L.fxX   = L.gateX + L.gateW + colGap;
+        L.fxW   = usable - L.gateW - colGap;
 
         L.knobGap = 44;
         L.knobW   = (L.W - 44 - 2 * L.knobGap) / 8;
 
-        // Graphic EQ. The legend on the left used to reserve 226 px for itself plus
-        // the two topology combos; those now live in the amp panel, so the bands get
-        // the space back.
-        const int eqBtnW = 54, eqTitleW = 130;
-        L.eqX0    = L.mg + eqTitleW;
-        L.eqBandW = (L.W - L.eqX0 - L.mg - eqBtnW - 10) / 5;
         return L;
     }
 };
+
+inline int Layout::idealHeight()
+{
+    const Layout L = compute (1020, 0);      // nothing above depends on H
+    return L.r3Y + L.r3H + 8 + L.barH;
+}
 
 //==============================================================================
 class AmpLookAndFeel : public juce::LookAndFeel_V4

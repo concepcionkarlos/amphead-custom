@@ -406,7 +406,7 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
       modChorusAtt   (p.apvts, "modChorus",   modChorusKnob),
       modRateAtt     (p.apvts, "modRate",     modRateKnob)
 {
-    setSize (1020, 728);
+    setSize (1020, Layout::idealHeight());
     setLookAndFeel (&laf);
 
     // channel buttons
@@ -912,8 +912,6 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
     const int W    = L.W,    H    = L.H;
     const int hdrH = L.hdrH, barH = L.barH;
     const int kpY  = L.kpY,  kpH  = L.kpH;
-    const int eqY  = L.eqY,  eqH  = L.eqH;
-    const int ftrY = L.ftrY, ftrH = L.ftrH;
 
     // body background
     g.setColour (CT::bg);
@@ -1043,11 +1041,12 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
     //==============================================================================
     //  KNOB PANEL
     {
-        // GRAPHIC EQ strip - same panel language as the knob row so it reads as part
-        // of the amp and not as a bolted-on plugin feature. Dimmed while the EQ is
-        // switched out, so the panel itself says whether it is in the signal path.
+        // GRAPHIC EQ - right half of row 2. Same panel language as the knob row so
+        // it reads as part of the amp and not as a bolted-on plugin feature. Dimmed
+        // while the EQ is switched out, so the panel says whether it is in the path.
         {
-            const Rectangle<float> ER (14.f, (float) eqY, (float)(W - 28), (float) eqH);
+            const Rectangle<float> ER ((float) L.eqPX, (float) L.r2Y,
+                                       (float) L.eqPW, (float) L.r2H);
             const bool on = audioProcessor.apvts.getRawParameterValue ("eqOn")->load() > 0.5f;
             for (int i = 4; i >= 1; --i)
             {
@@ -1063,16 +1062,18 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
 
             g.setColour (on ? CT::accentHi : CT::textDim);
             g.setFont (Font (FontOptions (CT::fPanel, Font::bold)));
-            g.drawText ("GRAPHIC EQ", 26, eqY + 8, 110, 20, Justification::centredLeft);
+            g.drawText ("5-BAND GRAPHIC EQ", L.eqPX + 16, L.r2Y + 8, 240, 20,
+                        Justification::centredLeft);
             g.setColour (CT::textLow);
             g.setFont (Font (FontOptions (CT::fMicro)));
-            g.drawText ("MARK V-CURVE", 26, eqY + 28, 110, 16, Justification::centredLeft);
+            g.drawText ("MARK V-CURVE", L.eqPX + 196, L.r2Y + 12, 130, 14,
+                        Justification::centredLeft);
 
             // 0 dB reference line across the fader travel. Without a centre line,
             // flat is hard to find.
             g.setColour (CT::panelRim.withAlpha (0.55f));
-            const int mid = eqY + 18 + (eqH - 24 - 15) / 2;
-            g.fillRect (L.eqX0 + 4, mid, W - L.eqX0 - 4 - 78, 1);
+            const int mid = L.eqFadeY + (L.eqFadeH - 15) / 2;
+            g.fillRect (L.eqX0, mid, L.eqBandW * 5, 1);
         }
 
         const Rectangle<float> PR (14.f, (float) kpY, (float)(W - 28), (float) kpH);
@@ -1165,101 +1166,75 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
     }
 
     //==============================================================================
-    //  FOOTER
+    //  ROW 2 LEFT: CABINET     ROW 3: GATE | FX
     {
-        g.setColour (CT::bg);
-        g.fillRect (0, ftrY, W, ftrH);
-        g.setColour (CT::accent.withAlpha (0.15f));
-        g.fillRect (0, ftrY, W, 1);
-        g.setColour (CT::divider);
-        g.fillRect (0, ftrY + 1, W, 1);
-
-        // panel geometry
-        const int gW  = L.gW,  pfW = L.pfW;
-        const int irW = L.irW, gX  = L.gX;
-        const int irX = L.irX, pfX = L.pfX;
-        const int pY  = L.pY,  pH  = L.pH;
-
-        // draw sub-panel boxes
-        const auto drawPanel = [&] (int px, int pw)
+        // One drawer for every sub-panel in both rows. It used to assume a single
+        // footer row, so it took only x and width; now that panels live on two
+        // rows it takes y and height too.
+        const auto drawPanel = [&] (int px, int py, int pw, int ph)
         {
-            Rectangle<float> r ((float) px, (float) pY, (float) pw, (float) pH);
-            // drop shadow
+            Rectangle<float> r ((float) px, (float) py, (float) pw, (float) ph);
             g.setColour (Colours::black.withAlpha (0.30f));
             g.fillRoundedRectangle (r.translated (0.f, 2.f).expanded (1.f), 8.f);
-            // face
             g.setColour (CT::bg2);
             g.fillRoundedRectangle (r, 6.f);
-            // border
             g.setColour (CT::divider);
             g.drawRoundedRectangle (r.reduced (0.5f), 6.f, 1.f);
         };
-        drawPanel (gX,  gW);
-        drawPanel (irX, irW);
-        drawPanel (pfX, pfW);
 
-        // panel header bars (full width, combobox-style)
-        const auto drawHdr = [&] (int hx, int hw, const juce::String& txt)
+        const auto drawHdr = [&] (int hx, int hy, int hw, const juce::String& txt)
         {
-            Rectangle<float> r ((float)(hx + 8), (float)(pY + 8), (float)(hw - 16), 24.f);
+            Rectangle<float> r ((float)(hx + 8), (float)(hy + 8), (float)(hw - 16), 24.f);
             g.setColour (CT::inputBg);
             g.fillRoundedRectangle (r, 4.f);
             g.setColour (CT::divider);
             g.drawRoundedRectangle (r.reduced (0.5f), 4.f, 1.f);
-            // text
             g.setFont (Font (FontOptions (CT::fLabel, Font::bold)));
             g.setColour (CT::textLow);
             g.drawText (txt, r.reduced (10.f, 0.f), Justification::centredLeft);
-            // dropdown arrow
-            const float ax = r.getRight() - 14.f, ay = r.getCentreY();
-            Path arr;
-            arr.addTriangle (ax - 4.f, ay - 2.5f, ax + 4.f, ay - 2.5f, ax, ay + 3.f);
-            g.setColour (CT::accent);
-            g.fillPath (arr);
         };
-        drawHdr (gX,  gW,  "NOISE GATE");
-        drawHdr (irX, irW / 2 + 10, "IR LOADER");
-        drawHdr (pfX, pfW, "POST FX");
 
-        // IR section
-        const int rTop = L.rTop;
+        drawPanel (L.cabX,  L.r2Y, L.cabW,  L.r2H);
+        drawPanel (L.gateX, L.r3Y, L.gateW, L.r3H);
+        drawPanel (L.fxX,   L.r3Y, L.fxW,   L.r3H);
 
-        // "IR A" / "IR B" text labels
+        drawHdr (L.cabX,  L.r2Y, L.cabW - 96, "CABINET");     // room for BYPASS IR
+        drawHdr (L.gateX, L.r3Y, L.gateW - 44, "NOISE GATE"); // room for ON
+        drawHdr (L.fxX,   L.r3Y, L.fxW,        "FX");
+
+        //--- CABINET -----------------------------------------------------------
+        const int rTop = L.r2Y + 46;
         g.setFont (Font (FontOptions (CT::fLabel, Font::bold)));
         g.setColour (CT::textLow);
-        g.drawText ("IR A", irX + 10, rTop,      32, 22, Justification::centredLeft);
-        g.drawText ("IR B", irX + 10, rTop + 28, 32, 22, Justification::centredLeft);
+        g.drawText ("IR A", L.cabX + 14, rTop,      34, 22, Justification::centredLeft);
+        g.drawText ("IR B", L.cabX + 14, rTop + 30, 34, 22, Justification::centredLeft);
 
-        // file name field backgrounds
-        const int fnX = irX + 46, fnW = irW / 2 - 62;
+        const int fnX = L.cabX + 52, fnW = L.cabW - 52 - 22;
         for (int row = 0; row < 2; ++row)
         {
-            Rectangle<float> fr ((float) fnX, (float)(rTop + row * 28), (float) fnW, 22.f);
+            Rectangle<float> fr ((float) fnX, (float)(rTop + row * 30), (float)(fnW - 26), 22.f);
             g.setColour (CT::inputBg);
             g.fillRoundedRectangle (fr, 3.f);
             g.setColour (CT::divider);
             g.drawRoundedRectangle (fr.reduced (0.5f), 3.f, 1.f);
         }
 
-        // vertical divider between IR files area and BLEND area
-        const int divX = irX + irW / 2 + 4;
-        g.setColour (CT::divider.withAlpha (0.6f));
-        g.fillRect ((float) divX, (float)(pY + 12), 1.f, (float)(pH - 24));
-
-        const int blendAreaCX = irX + irW / 2 + (irW / 2) / 2;
-
-        // A / B slider end labels
-        const int slY = pY + pH - 24;
-        const int slX = blendAreaCX - 74;
+        const int slY = L.r2Y + L.r2H - 30;
         g.setFont (Font (FontOptions (CT::fLabel, Font::bold)));
         g.setColour (CT::textLow);
-        g.drawText ("A", slX - 16, slY, 18, 16, Justification::centred);
-        g.drawText ("B", slX + 150, slY, 18, 16, Justification::centred);
+        g.drawText ("A", L.cabX + 12,           slY, 16, 18, Justification::centred);
+        g.drawText ("B", L.cabX + L.cabW - 28,  slY, 16, 18, Justification::centred);
 
-        // "A  BLEND  B" caption above the crossfade slider.
-        g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
-        g.setColour (CT::textDim);
-        g.drawText ("A  BLEND  B", slX - 14, slY - 16, 176, 16, Justification::centred);
+        //--- FX: three independent columns -------------------------------------
+        // The dividers are what make REVERB, DELAY and MODULATION read as three
+        // separate effects rather than nine knobs in a box.
+        const int colW = (L.fxW - 24) / 3;
+        for (int i = 1; i < 3; ++i)
+        {
+            const float dx = (float)(L.fxX + 12 + colW * i);
+            g.setColour (CT::divider.withAlpha (0.5f));
+            g.fillRect (dx, (float)(L.r3Y + 42), 1.f, (float)(L.r3H - 54));
+        }
 
         // Post FX captions are Labels placed in resized(), not drawn here.
     }
@@ -1325,7 +1300,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             // Target reminder, sitting right under the bracket drawn on the meter.
             g.setFont (Font (FontOptions (CT::fMicro)));
             g.setColour (CT::textDim);
-            g.drawText ("TARGET -18 to -12 dB peak", 14, bY + 30, 210, 15, Justification::centredLeft);
+            g.drawText ("TARGET -18 to -12 dB peak", 14, bY + 27, 210, 15, Justification::centredLeft);
         }
 
         // Only shown while output is actually clipping - points at the control
@@ -1340,8 +1315,10 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         // OVERSAMPLING / QUALITY labels
         g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
         g.setColour (CT::textDim);
-        g.drawText ("OVERSAMPLING", W / 2 - 136, bY + 2, 100, 16, Justification::centredRight);
-        g.drawText ("QUALITY",      W / 2 + 50,  bY + 2, 66, 16, Justification::centredRight);
+        // Right-aligned to end just before each combo starts. They used to overlap
+        // their own dropdowns: OVERSAMPLING showed as "NG" and QUALITY not at all.
+        g.drawText ("OVERSAMPLING", W / 2 - 230, bY + 2, 108, 16, Justification::centredRight);
+        g.drawText ("QUALITY",      W / 2 - 20,  bY + 2, 74,  16, Justification::centredRight);
 
         // version footer text
         g.setFont (Font (FontOptions (CT::fMicro)));
@@ -1359,7 +1336,6 @@ void CopilotToneAudioProcessorEditor::resized()
     const Layout L = Layout::compute (getWidth(), getHeight());
     const int W    = L.W,    H    = L.H;
     const int hdrH = L.hdrH, barH = L.barH;
-    const int eqY  = L.eqY,  eqH  = L.eqH;
 
     // header
     {
@@ -1426,115 +1402,84 @@ void CopilotToneAudioProcessorEditor::resized()
     }
 
 
-    // graphic EQ strip
+    // graphic EQ - right half of row 2
     {
         const int btnW = 54;
-        const int cw   = L.eqBandW;
         for (int i = 0; i < 5; ++i)
         {
-            const int cx = L.eqX0 + i * cw;
-            eqLabel [i].setBounds (cx, eqY + 4, cw, 14);
-            eqSlider[i].setBounds (cx + cw / 2 - 26, eqY + 18, 52, eqH - 24);
+            const int cx = L.eqX0 + i * L.eqBandW;
+            eqLabel [i].setBounds (cx, L.r2Y + 34, L.eqBandW, 14);
+            eqSlider[i].setBounds (cx + L.eqBandW / 2 - 26, L.eqFadeY, 52, L.eqFadeH);
         }
-        eqOnBtn.setBounds (W - L.mg - btnW, eqY + eqH / 2 - 14, btnW, 28);
+        eqOnBtn.setBounds (L.eqPX + L.eqPW - btnW - 14, L.r2Y + 8, btnW, 24);
     }
-
-    // footer
+    // CABINET - row 2, left
     {
-        const int gW  = L.gW,  pfW = L.pfW;
-        const int irW = L.irW, gX  = L.gX;
-        const int irX = L.irX, pfX = L.pfX;
-        const int pY  = L.pY,  pH  = L.pH;
-        const int rTop = L.rTop;
+        const int rTop = L.r2Y + 46;
+        const int fnX  = L.cabX + 52, fnW = L.cabW - 52 - 22;
+        irANameLabel.setBounds (fnX,             rTop,      fnW - 26, 22);
+        irAFolderBtn.setBounds (fnX + fnW - 22,  rTop,      22, 22);
+        irBNameLabel.setBounds (fnX,             rTop + 30, fnW - 26, 22);
+        irBFolderBtn.setBounds (fnX + fnW - 22,  rTop + 30, 22, 22);
 
-        // Noise Gate knobs. kH is fixed so the slider textbox, which takes the last
-        // 16 px of the bounds, clears the separate label placed below it.
-        {
-            const int kW = (gW - 20) / 2;
-            const int kH = 148;   // knob+textbox height (textbox = last 16px inside)
-            const int lH = 14;
-            gateThreshSlider.setBounds  (gX + 8,       rTop,         kW, kH);
-            gateThreshLabel.setBounds   (gX + 8,       rTop + kH + 4, kW, lH);
-            gateReleaseSlider.setBounds (gX + 10 + kW, rTop,         kW, kH);
-            gateReleaseLabel.setBounds  (gX + 10 + kW, rTop + kH + 4, kW, lH);
-            // ON/OFF toggle in the panel header (right side)
-            gateOnBtn.setBounds (gX + gW - 52, pY + 11, 42, 20);
-        }
-
-        // IR Loader
-        {
-            // file name labels and folder buttons
-            const int fnX = irX + 46, fnW = irW / 2 - 62;
-            irANameLabel.setBounds (fnX, rTop,      fnW, 22);
-            irAFolderBtn.setBounds (fnX + fnW + 4,  rTop,      22, 22);
-            irBNameLabel.setBounds (fnX, rTop + 28, fnW, 22);
-            irBFolderBtn.setBounds (fnX + fnW + 4,  rTop + 28, 22, 22);
-
-            // IR reminder - under the two file rows, within the left half.
-            irHintLabel.setBounds (irX + 12, rTop + 58, irW / 2 - 16, 18);
-
-            // BYPASS IR button - top right of IR header row
-            bypIRBtn.setBounds (irX + irW - 90, pY + 10, 84, 22);
-
-            const int blendAreaCX = irX + irW / 2 + (irW / 2) / 2;
-
-            // A/B blend slider
-            const int slY = pY + pH - 22;
-            const int slX = blendAreaCX - 74;
-            irBlendSlider.setBounds (slX, slY, 148, 18);
-        }
-
-        // Post FX
-        {
-            // Three stacked rows: caption (+ type dropdown) on the left, three
-            // knobs on the right.  REVERB = Mix/Decay/Tone, DELAY = Mix/Time/Fdbk,
-            // MODULATION = Detune/Chorus/Rate (no dropdown).
-            const int comboW = 150;
-            const int knobsX = pfX + 168;
-            const int knobsW = pfW - 168 - 10;
-            const int colW   = knobsW / 3;
-            const int kSz    = 46;     // knob diameter
-            const int lH     = 11;     // caption height
-
-            const auto placeRow = [&] (int secY, juce::Label& cap, juce::ComboBox* box,
-                                       juce::Slider& k0, juce::Label& l0,
-                                       juce::Slider& k1, juce::Label& l1,
-                                       juce::Slider& k2, juce::Label& l2)
-            {
-                cap.setBounds (pfX + 12, secY - 2, 120, 12);
-                if (box != nullptr) box->setBounds (pfX + 12, secY + 13, comboW, 22);
-
-                const int kY = secY + 1;
-                juce::Slider* ks[3] = { &k0, &k1, &k2 };
-                juce::Label*  ls[3] = { &l0, &l1, &l2 };
-                for (int j = 0; j < 3; ++j)
-                {
-                    const int cx = knobsX + colW * j + colW / 2;
-                    ks[j]->setBounds (cx - kSz / 2, kY, kSz, kSz);
-                    ls[j]->setBounds (cx - colW / 2, kY + kSz, colW, lH);
-                }
-            };
-
-            const int sAY = pY + 38;
-            placeRow (sAY, reverbLabel, &reverbTypeBox,
-                      reverbMixKnob,   reverbMixLabel,
-                      reverbDecayKnob, reverbDecayLabel,
-                      reverbToneKnob,  reverbToneLabel);
-
-            const int sBY = sAY + 62;
-            placeRow (sBY, delayLabel, &delayTypeBox,
-                      delayMixKnob,  delayMixLabel,
-                      delayTimeKnob, delayTimeLabel,
-                      delayFbKnob,   delayFbLabel);
-
-            const int sCY = sBY + 62;
-            placeRow (sCY, modLabel, nullptr,
-                      modDetuneKnob, modDetuneLabel,
-                      modChorusKnob, modChorusLabel,
-                      modRateKnob,   modRateLabel);
-        }
+        // The one no-IR warning, directly under the two file rows.
+        irHintLabel .setBounds (L.cabX + 14, rTop + 62, L.cabW - 28, 18);
+        bypIRBtn    .setBounds (L.cabX + L.cabW - 90, L.r2Y + 8, 82, 24);
+        irBlendSlider.setBounds (L.cabX + 32, L.r2Y + L.r2H - 29, L.cabW - 64, 18);
     }
 
+    // NOISE GATE - row 3, left. Two knobs and a switch, nothing more: it earns
+    // far less space than it used to take.
+    {
+        const int kW = (L.gateW - 26) / 2, kH = 86, lH = 14;
+        const int kY = L.r3Y + 44;
+        gateThreshSlider .setBounds (L.gateX + 9,       kY,           kW, kH);
+        gateThreshLabel  .setBounds (L.gateX + 9,       kY + kH + 2,  kW, lH);
+        gateReleaseSlider.setBounds (L.gateX + 17 + kW, kY,           kW, kH);
+        gateReleaseLabel .setBounds (L.gateX + 17 + kW, kY + kH + 2,  kW, lH);
+        gateOnBtn        .setBounds (L.gateX + L.gateW - 46, L.r3Y + 10, 38, 20);
+    }
+
+    // FX - row 3, right. Three columns side by side instead of three stacked
+    // rows: same nine knobs, but each effect is now its own block.
+    {
+        const int colW = (L.fxW - 24) / 3;
+
+        const auto placeCol = [&] (int ci, juce::Label& cap, juce::ComboBox* box,
+                                   juce::Slider& k0, juce::Label& l0,
+                                   juce::Slider& k1, juce::Label& l1,
+                                   juce::Slider& k2, juce::Label& l2)
+        {
+            const int cx    = L.fxX + 12 + colW * ci;
+            const int inner = colW - 16;
+            cap.setBounds (cx + 8, L.r3Y + 44, inner, 12);
+            if (box != nullptr) box->setBounds (cx + 8, L.r3Y + 58, inner, 22);
+
+            const int kSz = 42, kY = L.r3Y + 88;
+            juce::Slider* ks[3] = { &k0, &k1, &k2 };
+            juce::Label*  ls[3] = { &l0, &l1, &l2 };
+            for (int j = 0; j < 3; ++j)
+            {
+                const int sub = inner / 3;
+                const int scx = cx + 8 + sub * j + sub / 2;
+                ks[j]->setBounds (scx - kSz / 2,  kY,       kSz, kSz);
+                ls[j]->setBounds (scx - sub / 2,  kY + kSz, sub, 11);
+            }
+        };
+
+        placeCol (0, reverbLabel, &reverbTypeBox,
+                  reverbMixKnob,   reverbMixLabel,
+                  reverbDecayKnob, reverbDecayLabel,
+                  reverbToneKnob,  reverbToneLabel);
+        placeCol (1, delayLabel, &delayTypeBox,
+                  delayMixKnob,  delayMixLabel,
+                  delayTimeKnob, delayTimeLabel,
+                  delayFbKnob,   delayFbLabel);
+        placeCol (2, modLabel, nullptr,
+                  modDetuneKnob, modDetuneLabel,
+                  modChorusKnob, modChorusLabel,
+                  modRateKnob,   modRateLabel);
+    }
     // bottom bar
     {
         const int bY = H - barH;
