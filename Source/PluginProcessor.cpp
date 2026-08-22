@@ -2104,6 +2104,15 @@ CopilotToneAudioProcessor::createParameterLayout()
             juce::ParameterID { b.first, 1 }, b.second,
             juce::NormalisableRange<float> (-12.f, 12.f, 0.1f), 0.f));
 
+    // Post-FX bypasses. Additive: no existing ID changes, so saved sessions and
+    // automation from before this build still recall exactly as they did. Default
+    // on, which is how the plugin behaved when there was no switch at all.
+    for (const auto& b : { std::pair<const char*, const char*> { "revOn", "Reverb On" },
+                           { "dlyOn", "Delay On" },
+                           { "modOn", "Modulation On" } })
+        layout.add (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { b.first, 1 }, b.second, true));
+
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "modDetune", 1 }, "Mod Detune",
         juce::NormalisableRange<float> (0.f, 1.f, 0.01f), 0.f));
@@ -2207,6 +2216,12 @@ void CopilotToneAudioProcessor::prepareToPlay (double sampleRate, int samplesPer
     toneStack.prepare  (sampleRate);
     toneStackEarly.prepare (sampleRate);
     graphicEQ.prepare  (sampleRate, samplesPerBlock);
+
+    // ~50 ms for a bypass to ramp, expressed per block so the time is the same
+    // whatever buffer size the host hands us.
+    fxOnSm = 1.f - std::exp (-(float) samplesPerBlock
+                             / juce::jmax (1.f, 0.05f * (float) sampleRate));
+    revOnZ = dlyOnZ = modOnZ = 1.f;
     powerAmp.prepare   (sampleRate, samplesPerBlock);
     outputTransformer.prepare (sampleRate);
     speakerSim.prepare        (sampleRate);
@@ -2325,6 +2340,9 @@ void CopilotToneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float reverbDecay = apvts.getRawParameterValue ("reverbDecay")->load();
     const float reverbTone  = apvts.getRawParameterValue ("reverbTone")->load();
     const float reverbMix   = apvts.getRawParameterValue ("reverbMix")->load();
+    const bool  revOn       = apvts.getRawParameterValue ("revOn")->load() > 0.5f;
+    const bool  dlyOn       = apvts.getRawParameterValue ("dlyOn")->load() > 0.5f;
+    const bool  modOn       = apvts.getRawParameterValue ("modOn")->load() > 0.5f;
     const float modDetune   = apvts.getRawParameterValue ("modDetune")->load();
     const float modChorus   = apvts.getRawParameterValue ("modChorus")->load();
     const float modRate     = apvts.getRawParameterValue ("modRate")->load();
@@ -2424,9 +2442,25 @@ void CopilotToneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Post FX - delay -> modulation -> reverb on the post-cabinet stereo signal.
     // Dry stays at unity and each stage adds its wet. Modulation sits between delay
     // and reverb so the detuned wash is reverberated too. All run every block.
-    delay.process      (buffer, numSamples, delayType,  delayTime,   delayFb,    delayMix);
-    modulation.process (buffer, numSamples, modDetune,  modChorus,   modRate);
-    reverb.process     (buffer, numSamples, reverbType, reverbDecay, reverbTone, reverbMix);
+    revOnZ += fxOnSm * ((revOn ? 1.f : 0.f) - revOnZ);
+    dlyOnZ += fxOnSm * ((dlyOn ? 1.f : 0.f) - dlyOnZ);
+    modOnZ += fxOnSm * ((modOn ? 1.f : 0.f) - modOnZ);
+
+    // Bypass by taking the wet amount to zero rather than by skipping the call.
+    // Skipping would freeze each stage's delay lines and dump a stale tail the
+    // moment it came back; this way the tails decay the way they would anyway.
+    //
+    // MOD OFF zeroes the DETUNE and CHORUS controls, not the whole stage. The
+    // background ensemble inside Modulation has a floor that is on at all times
+    // (bgAmt = 0.15 + 0.85 * detune) because it is part of how the amp sounds, not
+    // an effect the player switched in. Killing it here would change the amp's
+    // voice, which is not what an FX bypass should do.
+    delay.process      (buffer, numSamples, delayType,  delayTime,   delayFb,
+                        delayMix * dlyOnZ);
+    modulation.process (buffer, numSamples, modDetune * modOnZ, modChorus * modOnZ,
+                        modRate);
+    reverb.process     (buffer, numSamples, reverbType, reverbDecay, reverbTone,
+                        reverbMix * revOnZ);
 
     const int outCh = juce::jmin (numOut, bufCh);
     // TouchRestore - off (see kTouch above). Costs nothing while disabled.

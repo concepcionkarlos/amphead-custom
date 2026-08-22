@@ -203,6 +203,7 @@ private:
     juce::Slider   delayMixKnob,  delayTimeKnob,   delayFbKnob;
     juce::Slider   modDetuneKnob, modChorusKnob,   modRateKnob;
     juce::Label    reverbLabel,   delayLabel,       modLabel;
+    juce::TextButton revOnBtn, dlyOnBtn, modOnBtn;   // per-effect bypass
     juce::Label    reverbMixLabel, reverbDecayLabel, reverbToneLabel;
     juce::Label    delayMixLabel,  delayTimeLabel,   delayFbLabel;
     juce::Label    modDetuneLabel, modChorusLabel,   modRateLabel;
@@ -229,7 +230,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         reverbTypeAtt, delayTypeAtt, stackPosAtt, rectAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
-        bypIRAtt, gateOnAtt, eqOnAtt;
+        bypIRAtt, gateOnAtt, eqOnAtt, revOnAtt, dlyOnAtt, modOnAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> eqAtt[5];
 
     float cachedInDb  = -120.f;

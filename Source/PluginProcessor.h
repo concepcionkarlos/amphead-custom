@@ -725,6 +725,12 @@ private:
     Modulation        modulation;
     ReverbEngine      reverb;
 
+    // Smoothed on/off for the three post-FX blocks. A bypass that jumps the wet
+    // amount to zero in one block clicks; these ramp it over ~50 ms. Per block,
+    // not per sample - the effects already smooth internally from there.
+    float revOnZ = 1.f, dlyOnZ = 1.f, modOnZ = 1.f;
+    float fxOnSm = 0.2f;
+
     double currentSampleRate   = 44100.0;
     int    preparedNumChannels = 2;
 

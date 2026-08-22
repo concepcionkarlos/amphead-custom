@@ -525,6 +525,34 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
             audioProcessor.apvts, "eqOn", eqOnBtn);
     }
 
+    // Per-effect bypass. Each switch sits in its own FX column header, next to the
+    // effect it switches.
+    {
+        struct FxOn { juce::TextButton& b; const char* id; const char* tip; };
+        const FxOn fx[3] = {
+            { revOnBtn, "revOn", "Reverb in / out" },
+            { dlyOnBtn, "dlyOn", "Delay in / out"  },
+            { modOnBtn, "modOn", "Detune and chorus in / out. The amp's background "
+                                 "ensemble stays either way - it is part of the voice, "
+                                 "not an effect." },
+        };
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>* att[3] =
+            { &revOnAtt, &dlyOnAtt, &modOnAtt };
+
+        for (int i = 0; i < 3; ++i)
+        {
+            fx[i].b.setButtonText ("ON");
+            fx[i].b.setClickingTogglesState (true);
+            fx[i].b.setColour (juce::TextButton::textColourOffId, CT::textDim);
+            fx[i].b.setColour (juce::TextButton::textColourOnId,  CT::textHi);
+            fx[i].b.setTooltip (fx[i].tip);
+            fx[i].b.setLookAndFeel (&laf);
+            addAndMakeVisible (fx[i].b);
+            *att[i] = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+                audioProcessor.apvts, fx[i].id, fx[i].b);
+        }
+    }
+
     // TOPOLOGY switches, sharing the EQ strip because they belong to the same idea:
     // what kind of amp this is, rather than how it is dialled in.
     {
@@ -748,6 +776,9 @@ CopilotToneAudioProcessorEditor::~CopilotToneAudioProcessorEditor()
     gateThreshSlider.setLookAndFeel  (nullptr);
     gateReleaseSlider.setLookAndFeel (nullptr);
     gateOnBtn.setLookAndFeel         (nullptr);
+    revOnBtn.setLookAndFeel          (nullptr);
+    dlyOnBtn.setLookAndFeel          (nullptr);
+    modOnBtn.setLookAndFeel          (nullptr);
     irAFolderBtn.setLookAndFeel      (nullptr);
     irBFolderBtn.setLookAndFeel      (nullptr);
     irMixKnob.setLookAndFeel         (nullptr);
@@ -1333,6 +1364,16 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             g.fillRect (dx, (float)(L.r3Y + 42), 1.f, (float)(L.r3H - 54));
         }
 
+        // MODULATION has no type dropdown, so its column would carry a hole where
+        // the other two have a control. Fill it with the fact that explains why the
+        // MOD switch does not silence the stage: the background ensemble is part of
+        // the amp's voice and runs at all times.
+        g.setFont (Font (FontOptions (CT::fMicro)));
+        g.setColour (CT::textDim);
+        g.drawText ("ENSEMBLE ALWAYS ON",
+                    L.fxX + 20 + colW * 2, L.r3Y + 58, colW - 16, 22,
+                    Justification::centredLeft);
+
         // Post FX captions are Labels placed in resized(), not drawn here.
     }
 
@@ -1543,14 +1584,16 @@ void CopilotToneAudioProcessorEditor::resized()
         const int colW = (L.fxW - 24) / 3;
 
         const auto placeCol = [&] (int ci, juce::Label& cap, juce::ComboBox* box,
+                                   juce::TextButton& onBtn,
                                    juce::Slider& k0, juce::Label& l0,
                                    juce::Slider& k1, juce::Label& l1,
                                    juce::Slider& k2, juce::Label& l2)
         {
             const int cx    = L.fxX + 12 + colW * ci;
             const int inner = colW - 16;
-            cap.setBounds (cx + 8, L.r3Y + 44, inner, 12);
+            cap.setBounds (cx + 8, L.r3Y + 44, inner - 40, 12);
             if (box != nullptr) box->setBounds (cx + 8, L.r3Y + 58, inner, 22);
+            onBtn.setBounds (cx + 8 + inner - 36, L.r3Y + 41, 36, 18);
 
             const int kSz = 42, kY = L.r3Y + 88;
             juce::Slider* ks[3] = { &k0, &k1, &k2 };
@@ -1564,15 +1607,15 @@ void CopilotToneAudioProcessorEditor::resized()
             }
         };
 
-        placeCol (0, reverbLabel, &reverbTypeBox,
+        placeCol (0, reverbLabel, &reverbTypeBox, revOnBtn,
                   reverbMixKnob,   reverbMixLabel,
                   reverbDecayKnob, reverbDecayLabel,
                   reverbToneKnob,  reverbToneLabel);
-        placeCol (1, delayLabel, &delayTypeBox,
+        placeCol (1, delayLabel, &delayTypeBox, dlyOnBtn,
                   delayMixKnob,  delayMixLabel,
                   delayTimeKnob, delayTimeLabel,
                   delayFbKnob,   delayFbLabel);
-        placeCol (2, modLabel, nullptr,
+        placeCol (2, modLabel, nullptr, modOnBtn,
                   modDetuneKnob, modDetuneLabel,
                   modChorusKnob, modChorusLabel,
                   modRateKnob,   modRateLabel);
