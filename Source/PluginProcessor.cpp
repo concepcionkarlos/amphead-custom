@@ -86,7 +86,24 @@ void AmpEngine::prepare (double sampleRate, int maxBlockSize)
     // Input front-end coefficients
     cDC    = hpfAlpha (2.f,     fsr);   // DC blocker
     cZHP   = hpfAlpha (7.f,     fsr);   // input impedance coupling cap ~7 Hz
-    cCblLP = lpfCoeff  (12000.f, fsr);   // cable capacitance ~12 kHz (more string clarity/highs)
+    // Pickup + cable resonance, RBJ lowpass. 4 H humbucker against ~250 pF - its
+    // own 100 pF plus a short 1.5 m lead - puts the peak at
+    //     1 / (2*pi*sqrt(L*C)) = 5.0 kHz
+    // Q 1.4 gives about +3.4 dB there. A longer cable adds capacitance and drags
+    // this down: 10 m lands near 2.5 kHz, which is why a long lead sounds duller.
+    // Deliberately modelling a SHORT cable - the voicing was tuned with a nearly
+    // flat front end, and a 10 m lead here would darken the whole amp.
+    {
+        const float f0 = 5000.f, Q = 1.4f;
+        const float w0 = juce::MathConstants<float>::twoPi * f0 / fsr;
+        const float cw = std::cos (w0), al = std::sin (w0) / (2.f * Q);
+        const float a0 = 1.f + al;
+        cblB0 = ((1.f - cw) * 0.5f) / a0;
+        cblB1 = ( 1.f - cw)         / a0;
+        cblB2 = cblB0;
+        cblA1 = (-2.f * cw)         / a0;
+        cblA2 = ( 1.f - al)         / a0;
+    }
     cHPF   = hpfAlpha (60.f,    fsr);   // input HPF 60 Hz (tighter sub, FM3-style lows)
     cInLP  = lpfCoeff  (16000.f, fsr);   // input LPF 16 kHz
 
@@ -200,7 +217,8 @@ void AmpEngine::reset()
 {
     dcX = dcY = 0.f;
     zHPx = zHPy = 0.f;
-    cblLP = inLP = tsEnv = 0.f;
+    cblZ1 = cblZ2 = 0.f;
+    inLP = tsEnv = 0.f;
     hpfX = hpfY = 0.f;
     isHPx = isHPy = isLP = 0.f;
     is2HPx = is2HPy = is2LP = 0.f;
@@ -271,7 +289,12 @@ void AmpEngine::process (float* data, int numSamples,
 
         { const float y = cDC * (dcY + x - dcX);  dcX = x;  dcY = y;  x = y; }
         { const float y = cZHP * (zHPy + x - zHPx);  zHPx = x;  zHPy = y;  x = y; }
-        cblLP += cCblLP * (x - cblLP);  x = cblLP;
+        {   // pickup + cable resonance
+            const float y = cblB0 * x + cblZ1;
+            cblZ1 = cblB1 * x - cblA1 * y + cblZ2;
+            cblZ2 = cblB2 * x - cblA2 * y;
+            x = y;
+        }
         { const float y = cHPF * (hpfY + x - hpfX);  hpfX = x;  hpfY = y;  x = y; }
         inLP += cInLP * (x - inLP);  x = inLP;
         {

@@ -279,7 +279,12 @@ private:
     // Input front-end filter states
     float dcX    = 0.f, dcY   = 0.f;   // DC blocker
     float zHPx   = 0.f, zHPy  = 0.f;   // input impedance coupling HPF
-    float cblLP  = 0.f;                  // cable capacitance LP
+    // Pickup + cable resonance. A pickup is an inductor (~4 H for a humbucker)
+    // and the cable is capacitance (~100 pF per metre). Together they ring: a peak
+    // a few dB high, then 12 dB/oct down. That peak IS the bright, alive top of an
+    // electric guitar - a plain one-pole has no peak at all and rolls off half as
+    // fast. Second order, so it needs two states rather than one.
+    float cblZ1 = 0.f, cblZ2 = 0.f;
     float hpfX   = 0.f, hpfY  = 0.f;   // input HPF (60 Hz)
     float inLP   = 0.f;                  // input LPF
     float tsEnv  = 0.f;                  // transient smoothing envelope
@@ -296,7 +301,7 @@ private:
     // Filter coefficients (computed in prepare, stable across all sample rates)
     float cDC    = 0.f;   // DC blocker alpha (~2 Hz)
     float cZHP   = 0.f;   // coupling HPF alpha (~7 Hz)
-    float cCblLP = 0.f;   // cable LP coeff (~8 kHz)
+    float cblB0 = 1.f, cblB1 = 0.f, cblB2 = 0.f, cblA1 = 0.f, cblA2 = 0.f;
     float cHPF   = 0.f;   // input HPF alpha (60 Hz)
     float cInLP  = 0.f;   // input LP coeff (16 kHz)
     float cTsAtk = 0.f;   // transient smooth attack coeff (0.5 ms)
