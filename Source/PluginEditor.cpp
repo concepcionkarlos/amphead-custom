@@ -1069,6 +1069,103 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             g.drawText ("MARK V-CURVE", L.eqPX + 196, L.r2Y + 12, 130, 14,
                         Justification::centredLeft);
 
+            // Response curve behind the faders: the composite magnitude of the five
+            // peaking biquads, on the same axis the faders use. Each band's centre
+            // frequency is placed at its own fader and +/-12 dB spans the fader
+            // travel, so the curve and the caps can never disagree.
+            //
+            // The five resonances are not evenly spaced in log f (87.6, 371.7,
+            // 723.4, 1575.9, 4822.9), so a plain log axis would drift the peaks off
+            // their faders. The mapping is piecewise-linear in log f through the
+            // five anchors instead, which pins every peak to its own cap.
+            //
+            // Known limit: the bands are broad (Q = 0.8) and overlap, so their
+            // gains add. Five faders at +12 dB sum to +22.5 dB at 750 Hz, well past
+            // the +/-12 the travel represents. The curve saturates at 13 dB rather
+            // than rescaling, because rescaling would move a single band's peak off
+            // the cap that set it - and the caps are what the player is reading.
+            {
+                const float fadeTop  = (float) L.eqFadeY;
+                const float fadeBot  = (float) (L.eqFadeY + L.eqFadeH - 15);
+                const float midY     = (fadeTop + fadeBot) * 0.5f;
+                const float halfSpan = (fadeBot - fadeTop) * 0.5f;
+
+                const double sr = audioProcessor.getSampleRate() > 0.0
+                                ? audioProcessor.getSampleRate() : 48000.0;
+
+                static const char* eqIds[GraphicEQ::kBands] =
+                    { "eq80", "eq240", "eq750", "eq2200", "eq6600" };
+
+                // Coefficients do not depend on x, so they are built once here
+                // rather than inside the pixel loop.
+                float ax[GraphicEQ::kBands], lf[GraphicEQ::kBands];
+                double B0[GraphicEQ::kBands], B1[GraphicEQ::kBands], B2[GraphicEQ::kBands],
+                       A1[GraphicEQ::kBands], A2[GraphicEQ::kBands];
+                bool   live[GraphicEQ::kBands];
+
+                for (int i = 0; i < GraphicEQ::kBands; ++i)
+                {
+                    ax[i] = (float) (L.eqX0 + L.eqBandW * i + L.eqBandW / 2);
+                    lf[i] = std::log10 (GraphicEQ::kFreq[i]);
+
+                    const float dB = audioProcessor.apvts.getRawParameterValue (eqIds[i])->load();
+                    live[i] = std::abs (dB) > 0.05f;
+                    if (! live[i]) continue;
+
+                    const double A  = std::pow (10.0, dB / 40.0);
+                    const double w0 = 2.0 * MathConstants<double>::pi * GraphicEQ::kFreq[i] / sr;
+                    const double al = std::sin (w0) / (2.0 * GraphicEQ::kQ);
+                    const double a0 = 1.0 + al / A;
+                    B0[i] = (1.0 + al * A)        / a0;
+                    B1[i] = (-2.0 * std::cos (w0)) / a0;
+                    B2[i] = (1.0 - al * A)        / a0;
+                    A1[i] = B1[i];
+                    A2[i] = (1.0 - al / A)        / a0;
+                }
+
+                const float xL = (float) L.eqX0;
+                const float xR = (float) (L.eqX0 + L.eqBandW * 5);
+
+                Path curve;
+                bool started = false;
+                for (float px = xL; px <= xR; px += 2.f)
+                {
+                    int seg = 0;
+                    while (seg < GraphicEQ::kBands - 2 && px > ax[seg + 1]) ++seg;
+                    const float t  = (px - ax[seg]) / (ax[seg + 1] - ax[seg]);
+                    const float f  = std::pow (10.f, lf[seg] + t * (lf[seg + 1] - lf[seg]));
+
+                    const double w  = 2.0 * MathConstants<double>::pi * f / sr;
+                    const double c1 = std::cos (w),       s1 = std::sin (w);
+                    const double c2 = std::cos (2.0 * w), s2 = std::sin (2.0 * w);
+
+                    double total = 0.0;
+                    for (int i = 0; i < GraphicEQ::kBands; ++i)
+                    {
+                        if (! live[i]) continue;
+                        const double nr = B0[i] + B1[i] * c1 + B2[i] * c2;
+                        const double ni = -(B1[i] * s1 + B2[i] * s2);
+                        const double dr = 1.0    + A1[i] * c1 + A2[i] * c2;
+                        const double di = -(A1[i] * s1 + A2[i] * s2);
+                        total += 10.0 * std::log10 ((nr * nr + ni * ni)
+                                                  / jmax (1.0e-12, dr * dr + di * di));
+                    }
+
+                    const float y = midY - (float) jlimit (-13.0, 13.0, total) / 12.f * halfSpan;
+                    if (! started) { curve.startNewSubPath (px, y); started = true; }
+                    else             curve.lineTo (px, y);
+                }
+
+                Path fill (curve);
+                fill.lineTo (xR, midY);
+                fill.lineTo (xL, midY);
+                fill.closeSubPath();
+                g.setColour (CT::accent.withAlpha (on ? 0.20f : 0.06f));
+                g.fillPath (fill);
+                g.setColour (on ? CT::accentHi.withAlpha (0.85f) : CT::textDim);
+                g.strokePath (curve, PathStrokeType (1.6f));
+            }
+
             // 0 dB reference line across the fader travel. Without a centre line,
             // flat is hard to find.
             g.setColour (CT::panelRim.withAlpha (0.55f));
