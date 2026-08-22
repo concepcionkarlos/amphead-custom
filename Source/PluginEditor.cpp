@@ -31,6 +31,19 @@ namespace CT {
 
     static const juce::Colour divider  { 0xff2c3050 };
 
+    // LINE SYSTEM. Two roles, one weight, and nothing else draws a line.
+    //   rim   the edge of a panel
+    //   rule  any divider INSIDE a panel - header underline, column separator,
+    //         knob-group separator, the EQ's 0 dB reference
+    // Before this a panel edge was drawn five different ways (panelRim, panelRim at
+    // 0.85, a near-black 0xff06070e at 1.5 px, a 0xff222440 at 0.7 alpha and 0.8 px,
+    // and divider) and an internal rule came in four alphas. No line carried meaning
+    // because every one of them was a separate decision. Alphas are gone: a line is
+    // one of these two colours at lineW, or it is not a line.
+    static const juce::Colour rim      { 0xff343954 };
+    static const juce::Colour rule     { 0xff262a44 };
+    static constexpr float    lineW = 1.0f;
+
     // TYPE SCALE. Ratio ~1.22, five steps, nothing below fMicro. Half-pixel
     // differences build no hierarchy, they only multiply the places to edit.
     // 11 px is the practical floor for a desktop UI label: smaller than that,
@@ -387,6 +400,20 @@ void FolderIconButton::paintButton (juce::Graphics& g, bool hi, bool down)
 
 //==============================================================================
 // helpers
+// Every line in the editor goes through one of these two.
+static void panelEdge (juce::Graphics& g, juce::Rectangle<float> r, float radius,
+                       juce::Colour c = CT::rim)
+{
+    g.setColour (c);
+    g.drawRoundedRectangle (r.reduced (0.5f), radius, CT::lineW);
+}
+
+static void rule (juce::Graphics& g, float x, float y, float w, float h)
+{
+    g.setColour (CT::rule);
+    g.fillRect (x, y, w, h);
+}
+
 static void styleKnob (juce::Slider& s, AmpLookAndFeel& laf, int tbW = 64)
 {
     s.setLookAndFeel (&laf);
@@ -1004,8 +1031,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         g.fillRect (0, 3, 3, hdrH - 3);
 
         // bottom separator
-        g.setColour (CT::panelRim);
-        g.fillRect (0, hdrH - 1, W, 1);
+        rule (g, 0.f, (float)(hdrH - 1), (float) W, CT::lineW);
 
         // "AmpHead" - bold white
         g.setFont (Font (FontOptions (CT::fBrand, Font::bold)));
@@ -1124,8 +1150,9 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
                                Colour (0xff0c0d14), ER.getX(), ER.getBottom(), false);
             g.setGradientFill (ef);
             g.fillRoundedRectangle (ER, 8.f);
-            g.setColour (CT::panelRim.withAlpha (on ? 0.85f : 0.35f));
-            g.drawRoundedRectangle (ER.reduced (0.5f), 8.f, 1.f);
+            // rim when the EQ is in the path, rule when it is out: the panel edge
+            // itself reports whether the section is doing anything.
+            panelEdge (g, ER, 8.f, on ? CT::rim : CT::rule);
 
             g.setColour (on ? CT::accentHi : CT::textDim);
             g.setFont (Font (FontOptions (CT::fPanel, Font::bold)));
@@ -1235,9 +1262,8 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
 
             // 0 dB reference line across the fader travel. Without a centre line,
             // flat is hard to find.
-            g.setColour (CT::panelRim.withAlpha (0.55f));
-            const int mid = L.eqFadeY + (L.eqFadeH - 15) / 2;
-            g.fillRect (L.eqX0, mid, L.eqBandW * 5, 1);
+            const float mid = (float)(L.eqFadeY + (L.eqFadeH - 15) / 2);
+            rule (g, (float) L.eqX0, mid, (float)(L.eqBandW * 5), CT::lineW);
         }
 
         const Rectangle<float> PR (14.f, (float) kpY, (float)(W - 28), (float) kpH);
@@ -1255,11 +1281,10 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         g.setGradientFill (pf);
         g.fillRoundedRectangle (PR, 8.f);
 
-        // borders
-        g.setColour (Colour (0xff06070e));
-        g.drawRoundedRectangle (PR.expanded (0.5f), 8.5f, 1.5f);
-        g.setColour (Colour (0xff222440).withAlpha (0.7f));
-        g.drawRoundedRectangle (PR.reduced (0.5f), 7.5f, 0.8f);
+        // One edge, not two. There were a near-black 1.5 px ring outside and a
+        // 0.8 px ring inside doing the same job; the drop shadow above already
+        // provides the depth those were reaching for.
+        panelEdge (g, PR, 8.f);
 
         // chamfer highlight
         g.setColour (Colour (0xff2d3055).withAlpha (0.5f));
@@ -1296,13 +1321,11 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
                 }
             }
 
+            // A 3 px accent glow at 0.06 alpha used to sit behind each of these.
+            // At that alpha it was not visible on this panel - it was code, not
+            // design. One rule, inset 12 px like every other rule in the window.
             for (float x : sx)
-            {
-                g.setColour (CT::divider.withAlpha (0.55f));
-                g.fillRect (x, PR.getY() + 12.f, 1.f, PR.getHeight() - 24.f);
-                g.setColour (CT::accent.withAlpha (0.06f));
-                g.fillRect (x - 1.f, PR.getY() + 12.f, 3.f, PR.getHeight() - 24.f);
-            }
+                rule (g, x, PR.getY() + 12.f, CT::lineW, PR.getHeight() - 24.f);
         }
 
         // corner screws
@@ -1342,8 +1365,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             g.fillRoundedRectangle (r.translated (0.f, 2.f).expanded (1.f), 8.f);
             g.setColour (CT::bg2);
             g.fillRoundedRectangle (r, 6.f);
-            g.setColour (CT::divider);
-            g.drawRoundedRectangle (r.reduced (0.5f), 6.f, 1.f);
+            panelEdge (g, r, 6.f);
         };
 
         // A panel title is not a control. This used to fill CT::inputBg, stroke
@@ -1356,8 +1378,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             g.setFont (Font (FontOptions (CT::fPanel, Font::bold)));
             g.setColour (CT::textMid);
             g.drawText (txt, hx + 14, hy + 8, hw - 28, 22, Justification::centredLeft);
-            g.setColour (CT::divider.withAlpha (0.7f));
-            g.fillRect (hx + 14, hy + 32, hw - 28, 1);
+            rule (g, (float)(hx + 14), (float)(hy + 32), (float)(hw - 28), CT::lineW);
         };
 
         drawPanel (L.cabX,  L.r2Y, L.cabW,  L.r2H);
@@ -1378,11 +1399,14 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         const int fnX = L.cabX + 52, fnW = L.cabW - 52 - 22;
         for (int row = 0; row < 2; ++row)
         {
+            // Field vocabulary, not panel vocabulary: inputBg + divider at radius 4,
+            // identical to drawComboBox, so everything you can click into looks the
+            // same. It was radius 3 here and 4 there for no reason.
             Rectangle<float> fr ((float) fnX, (float)(rTop + row * 30), (float)(fnW - 26), 22.f);
             g.setColour (CT::inputBg);
-            g.fillRoundedRectangle (fr, 3.f);
+            g.fillRoundedRectangle (fr, 4.f);
             g.setColour (CT::divider);
-            g.drawRoundedRectangle (fr.reduced (0.5f), 3.f, 1.f);
+            g.drawRoundedRectangle (fr.reduced (0.5f), 4.f, CT::lineW);
         }
 
         const int slY = L.r2Y + L.r2H - 30;
@@ -1398,8 +1422,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         for (int i = 1; i < 3; ++i)
         {
             const float dx = (float)(L.fxX + 12 + colW * i);
-            g.setColour (CT::divider.withAlpha (0.5f));
-            g.fillRect (dx, (float)(L.r3Y + 42), 1.f, (float)(L.r3H - 54));
+            rule (g, dx, (float)(L.r3Y + 42), CT::lineW, (float)(L.r3H - 54));
         }
 
         // MODULATION has no type dropdown, so its column would carry a hole where
@@ -1423,8 +1446,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         const int bY = H - barH;
         g.setColour (Colour (0xff07080d));
         g.fillRect (0, bY, W, barH);
-        g.setColour (CT::divider);
-        g.fillRect (0, bY, W, 1);
+        rule (g, 0.f, (float) bY, (float) W, CT::lineW);
 
         // labels
         g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
