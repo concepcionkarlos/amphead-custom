@@ -1108,38 +1108,14 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         g.drawText (juce::String ("BOUTIQUE AMP HEAD  ") + bullet + juce::String ("  PROTOTYPE"),
                     22, 50, 300, 14, Justification::centredLeft);
 
-        // gear icon (drawn, not interactive)
-        {
-            const float gx = (float)(W - 34), gy = 22.f, gr = 11.f;
-            // outer ring
-            g.setColour (CT::divider);
-            g.drawEllipse (gx - gr, gy - gr, gr * 2.f, gr * 2.f, 1.5f);
-            g.setColour (CT::textDim);
-            g.drawEllipse (gx - gr, gy - gr, gr * 2.f, gr * 2.f, 1.f);
-            // teeth: 8 small rectangles radiating outward
-            for (int ti = 0; ti < 8; ++ti)
-            {
-                const float ta = ti * juce::MathConstants<float>::pi / 4.f;
-                const float tx = gx + (gr + 2.f) * std::sin (ta);
-                const float ty = gy - (gr + 2.f) * std::cos (ta);
-                g.fillEllipse (tx - 1.8f, ty - 1.8f, 3.6f, 3.6f);
-            }
-            // inner hub
-            g.setColour (CT::textDim);
-            g.fillEllipse (gx - 4.f, gy - 4.f, 8.f, 8.f);
-        }
     }
 
     // active channel underline glow
     {
         const int chan = (int) audioProcessor.apvts.getRawParameterValue ("channel")->load();
-        const int btnW = 104, btnGap = 4, gearW = 32;
-        const int btnH = 36, bY = (hdrH - btnH) / 2 - 6;
-        const int btnAreaRight = W - 14 - gearW - 10;
-        const int btnAreaLeft  = btnAreaRight - (3 * btnW + 2 * btnGap);
-        const float ix = (float)(btnAreaLeft + chan * (btnW + btnGap));
-        const float iw = (float) btnW;
-        const float iy = (float)(bY + btnH + 1);
+        const float ix = (float)(L.chX + chan * (L.chW + L.chGap));
+        const float iw = (float) L.chW;
+        const float iy = (float)(L.chY + L.chH + 1);
 
         ColourGradient glow (CT::accent.withAlpha (0.30f), ix + iw * 0.5f, iy,
                              CT::accent.withAlpha (0.f),   ix + iw * 0.5f, iy - 14.f, false);
@@ -1564,23 +1540,13 @@ void CopilotToneAudioProcessorEditor::resized()
 {
     const Layout L = Layout::compute (getWidth(), getHeight());
     const int W    = L.W,    H    = L.H;
-    const int hdrH = L.hdrH, barH = L.barH;
+    const int barH = L.barH;
 
     // header
     {
-        // Channel buttons: three equal buttons on the right, with room reserved
-        // for the gear icon.
-        const int btnW   = 104;  // each button width
-        const int btnH   = 36;   // button height
-        const int btnGap = 4;    // gap between buttons
-        const int gearW  = 32;   // gear icon area
-        const int bY     = (hdrH - btnH) / 2 - 6;  // vertically centred in top half
-        const int rightEdge = W - 14;
-        // The gear icon is drawn in paint() at rightEdge - gearW.
-        const int btnAreaRight = rightEdge - gearW - 10;
-        const int btnAreaLeft  = btnAreaRight - (3 * btnW + 2 * btnGap);
+        // Three equal buttons, right-aligned with the panels below them.
         for (int i = 0; i < 3; ++i)
-            chBtn[i].setBounds (btnAreaLeft + i * (btnW + btnGap), bY, btnW, btnH);
+            chBtn[i].setBounds (L.chX + i * (L.chW + L.chGap), L.chY, L.chW, L.chH);
 
     }
 

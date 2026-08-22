@@ -23,6 +23,7 @@ struct Layout
 {
     int W, H;
     int hdrH, barH;
+    int chX, chY, chW, chH, chGap;   // channel buttons, in the header
     int kpY, kpH;            // amp knob panel
     int knobRowY, knobRowH;  // the 8 knobs inside it
     int topoY;               // tone-stack / rectifier switches, below the knobs
@@ -47,6 +48,15 @@ struct Layout
         L.W    = w;
         L.H    = h;
         L.hdrH = 80;
+        // Channel buttons. These were computed independently in paint() and in
+        // resized() - the same drift Layout exists to prevent, missed the first time
+        // round. They used to reserve 42 px on the right for a gear icon that was
+        // painted but not interactive; with it gone they end flush with the panels
+        // below, at the same 14 px margin.
+        L.chW   = 104;
+        L.chGap = 4;
+        L.chH   = 36;
+        L.chY   = (L.hdrH - L.chH) / 2 - 6;
         // The bar carries FOUR rows: meters, the input status message, the target
         // reminder, and the version footer. At 46 the last three sat on baselines a
         // few pixels apart and the target overlapped the footer's rectangle.
@@ -60,6 +70,7 @@ struct Layout
         L.kpH      = (L.topoY - L.kpY) + 36;
 
         L.mg = 14;
+        L.chX = L.W - L.mg - (3 * L.chW + 2 * L.chGap);
         const int usable = L.W - L.mg * 2;
         const int colGap = 8;
 
