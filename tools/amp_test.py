@@ -201,8 +201,28 @@ def test_aliasing(channel):
     spec = np.abs(np.fft.rfft(out * np.hanning(len(out))))
     fr = np.fft.rfftfreq(len(out), 1 / SR)
     fund = spec[np.argmin(np.abs(fr - f0))]
-    # everything below the fundamental that is not a subharmonic of it
-    below = (fr > 100) & (fr < f0 * 0.9)
+    # Everything below the fundamental, MINUS the supply ripple. The amp puts
+    # 120 Hz ripple on its B+ rail on purpose, and the sidebands that produces
+    # are inharmonic by design - exactly what this test looks for. Without the
+    # mask it reports the ghost notes as aliasing: adding the ripple moved CLEAN
+    # from -81.2 to -71.2 dBc with the oversampling untouched.
+    #
+    # PARTIAL, and worth knowing why. Masking the discrete lines recovers about
+    # 1 dB of the 10. The rest is real: ripple modulates every harmonic, aliased
+    # ones included. The 16th of 3050 Hz lands at 48800 and folds to 800 Hz, and
+    # its sidebands sit at 800 +/- 120k - not a multiple of 120, not near
+    # f0 +/- 120k, so no mask of this shape catches them. That energy IS alias
+    # energy, just alias energy the ripple created.
+    #
+    # The measurement that would separate the two cleanly is differential:
+    # aliasing moves with the oversampling factor, ripple does not. Comparing
+    # x1 against x8 would isolate it. Not done yet.
+    RIPPLE = 120.0
+    TOL    = 12.0                      # Hann main lobe plus a little
+    below  = (fr > 100) & (fr < f0 * 0.9)
+    for k in range(1, int(f0 / RIPPLE) + 2):
+        for centre in (k * RIPPLE, f0 - k * RIPPLE, f0 + k * RIPPLE):
+            below &= np.abs(fr - centre) > TOL
     alias = spec[below].max()
     ratio = 20 * math.log10(alias / (fund + 1e-20) + 1e-20)
     ok = bool(ratio < -40)
