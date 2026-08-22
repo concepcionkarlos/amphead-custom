@@ -158,6 +158,7 @@ private:
     AmpLookAndFeel laf;
     juce::TooltipWindow tooltipWindow { this, 600 };   // hover help for every control
 
+    int lastChan = -1;     // drives the header repaint when the channel changes
     int inClipHold  = 0;   // clip-indicator hold counters (timer ticks)
     int outClipHold = 0;
 

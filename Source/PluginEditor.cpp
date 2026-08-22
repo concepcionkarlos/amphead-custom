@@ -40,8 +40,14 @@ namespace CT {
     // and divider) and an internal rule came in four alphas. No line carried meaning
     // because every one of them was a separate decision. Alphas are gone: a line is
     // one of these two colours at lineW, or it is not a line.
-    static const juce::Colour rim      { 0xff343954 };
-    static const juce::Colour rule     { 0xff262a44 };
+    // Values chosen by measuring the rendered contrast against the surfaces they
+    // are drawn on, not by eye. The first pass at 0x343954 / 0x262a44 measured
+    // 1.5:1 and 1.3:1 - consistent, and invisible. Below about 1.5:1 a hairline is
+    // not seen, it is inferred.
+    //   rim   2.4 : 1 on a panel face
+    //   rule  1.7 : 1  - present, subordinate to the edge that contains it
+    static const juce::Colour rim      { 0xff4d5480 };
+    static const juce::Colour rule     { 0xff3a4066 };
     static constexpr float    lineW = 1.0f;
 
     // TYPE SCALE. Ratio ~1.22, five steps, nothing below fMicro. Half-pixel
@@ -897,6 +903,18 @@ void CopilotToneAudioProcessorEditor::timerCallback()
     if (irHintLabel.isVisible() == anyIR)
         irHintLabel.setVisible (! anyIR);
 
+    // The active-channel underline is drawn by paint() at y = 53, just BELOW the
+    // channel buttons, so clicking one invalidates the button and not the underline:
+    // the old channel's mark stayed on screen and the new one never appeared.
+    // Watching the parameter here catches host automation too, which a repaint from
+    // the button's own callback would miss.
+    const int chanNow = (int) audioProcessor.apvts.getRawParameterValue ("channel")->load();
+    if (chanNow != lastChan)
+    {
+        lastChan = chanNow;
+        repaint (0, 0, getWidth(), 80);      // the header band
+    }
+
     // Keep the OVERSAMPLING + QUALITY combos mirrored to the shared osFactor.
     const int osi = juce::jlimit (0, 3,
         (int) audioProcessor.apvts.getRawParameterValue ("osFactor")->load());
@@ -1444,9 +1462,12 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
     //  BOTTOM BAR
     {
         const int bY = H - barH;
+        // No rule along the top. The bar's fill is already two steps darker than the
+        // body, and a fill change is a boundary; a hairline on top of it put two
+        // faint lines 8 px apart - the panel edge above and this one - with neither
+        // reading as the edge of anything.
         g.setColour (Colour (0xff07080d));
         g.fillRect (0, bY, W, barH);
-        rule (g, 0.f, (float) bY, (float) W, CT::lineW);
 
         // labels
         g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
