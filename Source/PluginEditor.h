@@ -210,6 +210,7 @@ private:
 
     // Bottom bar
     juce::ComboBox oversamplingBox, qualityBox;
+    juce::ComboBox cableBox;     // guitar lead length - it sits at the input end
     // Topology switches. Tone-stack position is the Mark IV's defining structural
     // trait; rectifier type is the Mesa tube-vs-silicon choice.
     juce::ComboBox stackPosBox, rectBox;
@@ -228,7 +229,7 @@ private:
     // ComboBox attachments are built in the constructor body (after items are
     // added) so the attachment can read the parameter and select the right item.
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
-        reverbTypeAtt, delayTypeAtt, stackPosAtt, rectAtt;
+        reverbTypeAtt, delayTypeAtt, stackPosAtt, rectAtt, cableAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
         bypIRAtt, gateOnAtt, eqOnAtt, revOnAtt, dlyOnAtt, modOnAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> eqAtt[5];

@@ -811,6 +811,18 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
     qualityBox.setTooltip ("Render quality (mirrors Oversampling): Draft=x1, Normal=x2, High=x4, Ultra=x8");
     addAndMakeVisible (qualityBox);
 
+    // Cable length. Lives in the bottom bar next to the input meter, because that
+    // is where it is in the signal chain: the lead is before everything.
+    cableBox.setLookAndFeel (&laf);
+    for (auto* t : { "3 ft", "10 ft", "15 ft", "20 ft", "30 ft" })
+        cableBox.addItem (t, cableBox.getNumItems() + 1);
+    cableBox.setTooltip ("Guitar lead length. A longer cable is more capacitance "
+                         "against the pickup's inductance, so the resonance drops "
+                         "and damps - 3 ft peaks near 6.5 kHz, 30 ft near 2.5.");
+    addAndMakeVisible (cableBox);
+    cableAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        audioProcessor.apvts, "cableLen", cableBox);
+
     startTimerHz (24);
 }
 
@@ -843,6 +855,7 @@ CopilotToneAudioProcessorEditor::~CopilotToneAudioProcessorEditor()
         s->setLookAndFeel (nullptr);
     oversamplingBox.setLookAndFeel   (nullptr);
     qualityBox.setLookAndFeel        (nullptr);
+    cableBox.setLookAndFeel          (nullptr);
 }
 
 //==============================================================================
@@ -1488,8 +1501,10 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         // their own dropdowns: OVERSAMPLING showed as "NG" and QUALITY not at all.
         // bY + 7 with height 20 matches the combos' own rectangle, so label and box
         // share a centre line. At bY + 2 they floated 8 px above their own control.
-        g.drawText ("OVERSAMPLING", W / 2 - 232, bY + 7, 108, 20, Justification::centredRight);
-        g.drawText ("QUALITY",      W / 2 - 22,  bY + 7, 74,  20, Justification::centredRight);
+        // Row reads as the signal chain: INPUT - CABLE - oversampling - OUTPUT.
+        g.drawText ("CABLE",        240, bY + 7,  48, 20, Justification::centredRight);
+        g.drawText ("OVERSAMPLING", 374, bY + 7,  96, 20, Justification::centredRight);
+        g.drawText ("QUALITY",      556, bY + 7,  58, 20, Justification::centredRight);
 
         // version footer text
         g.setFont (Font (FontOptions (CT::fMicro)));
@@ -1659,7 +1674,8 @@ void CopilotToneAudioProcessorEditor::resized()
     // bottom bar
     {
         const int bY = H - barH;
-        oversamplingBox.setBounds (W / 2 - 118, bY + 7, 72, 20);
-        qualityBox.setBounds      (W / 2 + 60,  bY + 7, 68, 20);
+        cableBox.setBounds        (292, bY + 7, 72, 20);
+        oversamplingBox.setBounds (474, bY + 7, 72, 20);
+        qualityBox.setBounds      (618, bY + 7, 68, 20);
     }
 }
