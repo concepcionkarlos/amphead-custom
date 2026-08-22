@@ -246,14 +246,46 @@ struct PowerSupply
     float preNode = 0.f;            // droop seen by the preamp, 0 = full B+
     float cAtk = 0.f, cRel = 0.f;
 
+    // Ripple. The rectifier does not deliver a smooth voltage - it charges the
+    // reservoir in pulses, twice per mains cycle, so 120 Hz on a 60 Hz supply. The
+    // reservoir smooths it, but never to nothing, and the harder the amp pulls the
+    // less it smooths. That leftover ripple rides on the plate voltage and
+    // amplitude-modulates whatever the stage is amplifying, which is where the
+    // ghost notes in a cranked amp come from: sidebands at f +/- 120 Hz that
+    // nobody played.
+    //
+    // Held as a rotating phasor rather than a sin() per sample - two multiply-adds
+    // and no transcendental on the audio thread.
+    float ripX = 1.f, ripY = 0.f;   // unit phasor: cos, sin
+    float ripC = 1.f, ripS = 0.f;   // per-sample rotation
+
     void prepare (double sampleRate)
     {
         const float fsr = (float) sampleRate;
         cAtk = std::exp (-1.f / (0.030f * fsr));    // 30 ms  to follow a draw down
         cRel = std::exp (-1.f / (0.320f * fsr));    // 320 ms for the reservoir to refill
         preNode = 0.f;
+
+        const float w = juce::MathConstants<float>::twoPi * 120.f / fsr;
+        ripC = std::cos (w);  ripS = std::sin (w);
+        ripX = 1.f;  ripY = 0.f;
     }
-    void reset() noexcept { preNode = 0.f; }
+    void reset() noexcept { preNode = 0.f;  ripX = 1.f;  ripY = 0.f; }
+
+    // Ripple as a fraction, scaled by how hard the amp is pulling: near silent at
+    // idle, biggest under a chord. Full-wave rectified ripple is a sawtooth rather
+    // than a sine, so a little second harmonic gets the shape closer.
+    inline float ripple (float depth) noexcept
+    {
+        const float nx = ripX * ripC - ripY * ripS;
+        ripY           = ripX * ripS + ripY * ripC;
+        ripX           = nx;
+        // One Newton step back onto the unit circle, so the phasor cannot drift.
+        const float k = 1.5f - 0.5f * (ripX * ripX + ripY * ripY);
+        ripX *= k;  ripY *= k;
+
+        return depth * preNode * (ripY + 0.35f * (2.f * ripX * ripY));
+    }
 
     // Called per sample by the power stage with its (already bounded) draw.
     inline void draw (float pwrDroop) noexcept
@@ -268,7 +300,7 @@ struct AmpEngine
     void prepare (double sampleRate, int maxBlockSize);
     void process (float* data, int numSamples, float gainNorm, float charNorm,
                   bool brightEnabled, int channelIndex, int factor, float tubeTemp,
-                  float railDroop);   // B+ droop left by the previous block
+                  PowerSupply& psu);   // the shared rail: droop and ripple
     void reset();
 
     // Rebuild the pickup + cable resonance for a cable length. Returns immediately

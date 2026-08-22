@@ -261,7 +261,7 @@ void AmpEngine::setCableLength (int idx)
 // Front-end at native SR -> oversampled V1A + interstage + V1B -> CF at native SR.
 void AmpEngine::process (float* data, int numSamples,
                           float gainNorm, float charNorm, bool brightEnabled, int ci, int factor, float tubeTemp,
-                         float railDroop)
+                         PowerSupply& psu)
 {
     if (factor != osFactor) selectOs (factor);   // RT-safe: table lookup, no exp
     // Per-channel amp output level calibration, set from measured peak dBFS so all
@@ -305,6 +305,12 @@ void AmpEngine::process (float* data, int numSamples,
     const float v1bDrive = kV1BDriveBase[ci] * charDrive
                          * (1.4f + gainW * (1.7f + gainW * 2.7f));
     // Input front-end at native SR
+    // Ripple depth. What survives the reservoir is a couple of percent of B+ under
+    // load; through several gain stages that is plenty to hear as ghost notes.
+    // Deeper on the high-gain channels because there is more gain after it to turn
+    // the modulation into audible sidebands.
+    static constexpr float kRipple[3] = { 0.010f, 0.030f, 0.070f };
+
     for (int n = 0; n < numSamples; ++n)
     {
         float x = data[n];
@@ -319,6 +325,11 @@ void AmpEngine::process (float* data, int numSamples,
         }
         { const float y = cHPF * (hpfY + x - hpfX);  hpfX = x;  hpfY = y;  x = y; }
         inLP += cInLP * (x - inLP);  x = inLP;
+
+        // Supply ripple modulating the stage gain. Applied at the input so that
+        // everything downstream amplifies the modulation the way the real chain
+        // does - the sidebands get distorted along with the note that made them.
+        x *= 1.f + psu.ripple (kRipple[ci]);
         {
             const float absX = std::abs (x);
             tsEnv = (absX > tsEnv) ? cTsAtk * tsEnv + (1.f - cTsAtk) * absX
@@ -382,7 +393,7 @@ void AmpEngine::process (float* data, int numSamples,
     static constexpr float kCkShelfB[3] = { 0.06f, 0.22f, 0.34f };
 
     static constexpr float kRail[3] = { 0.06f, 0.13f, 0.20f };
-    const float railGain = 1.f / (1.f + kRail[ci] * juce::jmin (railDroop, 2.5f));
+    const float railGain = 1.f / (1.f + kRail[ci] * juce::jmin (psu.preNode, 2.5f));
 
     const float v1aDrive    = v1aDriveBase * railGain
                             * (0.84f + 0.26f * brightRatio + 0.14f * pickNorm);
@@ -2489,12 +2500,12 @@ void CopilotToneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             toneStackEarly.process (data, numSamples, bass, mid, treble, ci);
             for (int n = 0; n < numSamples; ++n) data[n] *= kMarkTrim;
             ampEngine.process (data, numSamples, gainNorm, charNorm, brightEnabled, ci, factor, tubeTemp,
-                               supply.preNode);
+                               supply);
         }
         else
         {
             ampEngine.process (data, numSamples, gainNorm, charNorm, brightEnabled, ci, factor, tubeTemp,
-                               supply.preNode);
+                               supply);
             toneStack.process (data, numSamples, bass, mid, treble, ci);
         }
 
