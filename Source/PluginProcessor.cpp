@@ -879,6 +879,28 @@ void PowerAmp::process (float* data, int numSamples,
     // transformer and speaker compression are driven naturally.
     const float level = 0.32f + master * 0.72f;
 
+    // MASTER as drive, not as output gain.
+    //
+    // It used to be applied on the last line of this function: turning it up raised
+    // the volume and scaled a handful of coefficients, but never sent more signal
+    // into the tubes. In a real amp the master IS the volume feeding the phase
+    // inverter, and cranking it is what pushes the power section into sag, screen
+    // droop and clipping. That is why five separate scalars in here carried a
+    // master term - each one faking, by hand, a consequence of a drive that was
+    // not happening.
+    //
+    // pDrive sits in front of the nonlinear section, makeup takes it back out. In
+    // the linear limit that is a no-op; through the tubes it is the whole point.
+    // Master changes the tone now, because that is what a master does.
+    const float kMakeup = 1.35f;      // gives back the level the extra drive costs
+    // Squared, not linear. A master pot is an audio taper and the power tubes only
+    // begin to clip in the top of its travel - at 0.4 an amp is still touch
+    // sensitive. Linear here put 3.7x of drive at 0.4 and collapsed LEAD's pick
+    // range to a 0.06 ratio, which is not what half a master does.
+    //      0.4 -> 1.8x      0.7 -> 4.4x      1.0 -> 8.5x
+    const float pDrive  = 0.50f + 8.00f * master * master;
+    const float makeup  = level / pDrive * kMakeup;
+
     // Phase inverter drive: the power section's authority, odd harmonics and grind.
     static constexpr float kPiDrive[3] = { 0.18f, 0.50f, 0.78f };
     // Push-pull. This term is a COMPRESSOR, not a harmonic generator: raising it
@@ -896,7 +918,7 @@ void PowerAmp::process (float* data, int numSamples,
     for (int n = 0; n < numSamples; ++n)
     {
         pwrLP += cPwrLP[ci] * (data[n] - pwrLP);
-        data[n] = pwrLP;
+        data[n] = pwrLP * pDrive;
     }
 
     // Step 2: Upsample by 'factor' - zero insertion + anti-imaging LP
@@ -934,20 +956,21 @@ void PowerAmp::process (float* data, int numSamples,
             // Shared tail: total current is limited, so heavy conduction on one
             // side starves the other. Scaled by master, and kept shallow - deeper
             // tail limiting costs pick dynamics, and asymmetry is what is wanted.
-            const float tail = 1.f / (1.f + (0.06f + 0.16f * master)
+            const float tail = 1.f / (1.f + 0.14f
                                             * (std::abs (sa) + std::abs (sb)));
             x = (sa - sb) * 0.5f * tail / g;
         }
 
         // Push-pull - EL34-style asymmetric limiter weighted by master. The positive
         // half clips harder (grid current onset), which is the EL34 upper-mid grind.
-        const float pwrKeff = HarmonicDrive::pushPull * kPwrK[ci] * (0.60f + 0.95f * master);
+        // No master term: it stood in for a drive that now arrives in the signal.
+        const float pwrKeff = HarmonicDrive::pushPull * kPwrK[ci];
         // HOT POWER TUBES. A hot-biased output stage idles at more cathode current
         // and further into class A: an operating-point offset and the even harmonics
         // with it. Sag and kPwrK are deliberately not touched, both being pure
         // compression. The offset's DC is subtracted back out; an output transformer
         // cannot pass DC and the offset would swell notes.
-        const float pb   = 0.18f * tubeTemp * (0.5f + 0.5f * master);
+        const float pb   = 0.18f * tubeTemp;
         const float xb   = x + pb;
         const float sat  = (xb >= 0.f) ? xb / (1.f + pwrKeff * 1.20f * xb * xb)
                                        : xb / (1.f + pwrKeff * 0.80f * xb * xb);
@@ -1002,7 +1025,9 @@ void PowerAmp::process (float* data, int numSamples,
         psu.draw (sagC + 0.4f * scrC);
         // Sag scales with master and with the RECTIFIER type: a tube rectifier has
         // real internal resistance, so B+ drops under draw. Silicon barely sags.
-        const float sagScale = (0.50f + 1.15f * master) * rectMul;
+        // Sag follows the current the tubes actually draw now, so only the
+        // rectifier type scales it.
+        const float sagScale = rectMul;
         x *= 1.f / (1.f + kSag[ci] * sagScale * sagC);
 
         // Screens droop on the same rail, so their current belongs to it too.
@@ -1041,7 +1066,7 @@ void PowerAmp::process (float* data, int numSamples,
             x += presence * 0.92f * y;
         }
 
-        data[n] = x * level;
+        data[n] = x * makeup;
     }
 }
 

@@ -115,7 +115,15 @@ def test_swell(channel, verbose=False):
     # 0.02 dB), character, the wideband ceiling. It scales with input level and with
     # GAIN, and it vanishes at a quiet input - it is static compression, not a slow
     # envelope with memory.
-    limit = (2.5, 5.5, 6.5)[channel]
+    # Re-based when MASTER became a drive rather than an output gain. These were
+    # set against a power stage that never saturated, so its supply never really
+    # sagged and notes never really bloomed. They do now, and the player confirmed
+    # by ear that a note swelling as the rail recovers is what an amp does.
+    #
+    # Raised only as far as the new physics reaches, not far enough to hide a
+    # regression: CLEAN measures 2.53 against 3.0, so 0.47 dB of headroom remains.
+    #     was (2.5, 5.5, 6.5)
+    limit = (3.0, 5.5, 6.5)[channel]
     ok = bool(rise < limit)
     print(f"  {'PASS' if ok else 'FAIL'}  swell        "
           f"gain rise after attack = {rise:+.2f} dB at {at*1000:.0f} ms   (limit +{limit})")
@@ -137,7 +145,13 @@ def test_dynamics(channel):
     # is for. These are set from what real amps do: a clean channel stays mostly
     # linear, a cranked lead still passes a few dB of pick dynamics. Anything
     # below these and the amp has stopped responding to the player.
-    floor = {0: 0.35, 1: 0.18, 2: 0.08}[channel]
+    # CRUNCH re-based from 0.18 with the same change. Driving the power tubes
+    # compresses pick range - that is what the tubes are for - and at master 0.4 it
+    # costs CRUNCH about 12% of its ratio. Measures 0.16 against 0.15, so 0.01 of
+    # margin: tight on purpose, because this floor exists to catch the amp turning
+    # into a limiter and it should still be able to.
+    #     was {0: 0.35, 1: 0.18, 2: 0.08}
+    floor = {0: 0.35, 1: 0.15, 2: 0.08}[channel]
     ok = bool(ratio > floor)
     print(f"  {'PASS' if ok else 'FAIL'}  dynamics     "
           f"{in_range:.1f} dB in -> {out_range:.1f} dB out  (ratio {ratio:.2f}, min {floor})")
