@@ -1,0 +1,40 @@
+Copyright (c) 2026 Juan Carlos Concepcion Ametller
+All rights reserved.
+
+This repository is published so the source can be READ - as a portfolio piece,
+and as something to learn from. It is not open source, and no licence to use it
+is granted by its being public.
+
+
+YOU MAY
+
+  - read the source
+  - clone the repository and build it to try the plugin for yourself
+  - quote short excerpts, with attribution, for discussion, review or teaching
+
+
+YOU MAY NOT, without written permission
+
+  - use this source, in whole or in part, in another project
+  - redistribute it, modified or unmodified
+  - distribute binaries built from it
+  - use it commercially in any form
+
+
+ON IDEAS
+
+Copyright covers expression, not ideas, and I am not claiming the ideas. The
+DSP in here builds on published work about how valve amplifiers behave, and
+anyone is free to read this, understand the approach, and write their own
+implementation of it. That is how the field works and how I got here.
+
+What is reserved is this particular expression: these files, and the voicing
+constants in them.
+
+
+NO WARRANTY
+
+Provided as is, without warranty of any kind. Use at your own risk.
+
+
+For permission beyond the above, open an issue on the repository.

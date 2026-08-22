@@ -131,8 +131,11 @@ python3 -m venv .venv
 
 ## License
 
-None. This repository is published as a portfolio piece: the source is here to be read, not
-reused. All rights reserved.
+All rights reserved - see [`LICENSE`](LICENSE). This repository is published so the source
+can be read, not reused. You are welcome to clone it and build it to try the plugin; you
+are not licensed to use the source in anything else.
+
+The ideas are not claimed, only this expression of them.
 
 ---
 
