@@ -301,7 +301,7 @@ void AmpEngine::process (float* data, int numSamples,
     // DRIVE (char) pushes the LATE stages while GAIN pushes the first one, so the two
     // controls add saturation at different points in the cascade instead of duplicating
     // each other: GAIN buys early bite, DRIVE buys density further down.
-    const float charDrive = 0.75f + 0.65f * charNorm;
+    const float charDrive = 0.70f + 0.80f * charNorm;
     const float v1bDrive = kV1BDriveBase[ci] * charDrive
                          * (1.4f + gainW * (1.7f + gainW * 2.7f));
     // Input front-end at native SR
@@ -402,7 +402,15 @@ void AmpEngine::process (float* data, int numSamples,
                             * (1.f + kPickPush[ci] * pickAtkBlk) * v1bPickMod;
 
     // Character knob: scales V1A mid-band asymmetry and the even-harmonic injection.
-    const float charIH      = 0.2f + 1.6f * charNorm;   // IH injection scale
+    // DRIVE used to be almost entirely this: even-harmonic injection. Measured on
+    // LEAD, turning it 0 -> 10 raised H2 by 7 dB and DROPPED H3 by 7. Even
+    // harmonics are warmth; odd harmonics are grind. So the control marked DRIVE
+    // made the amp softer and rounder, which is why it reads as backwards to a
+    // player - you ask for aggression and get warmth.
+    //
+    // Keep some even in it, and put the rest of its travel into the two things
+    // that actually produce grind: the hard-clip stage and the drive into V1B.
+    const float charIH      = 0.5f + 0.7f * charNorm;   // IH injection scale
     const float charMidAsym = 0.7f + 0.6f * charNorm;   // V1A mid positive headroom
 
     // Upsample by 'factor': zero insertion plus the anti-imaging LP, upGain compensating.
@@ -591,11 +599,20 @@ void AmpEngine::process (float* data, int numSamples,
             // A seasoning, not the main flavour: jlimit is a true discontinuity, so
             // it generates unbounded harmonics that alias even at 8x.
             static constexpr float kDs2Drv[3] = { 0.0f, 0.8f,  1.1f };   // extra drive
-            static constexpr float kDs2Mix[3] = { 0.0f, 0.26f, 0.24f };  // blend amount
+            // Blend amount, and DRIVE now moves it. The hard clip is the amp's only
+            // real source of odd harmonics, so leaving its blend fixed meant the
+            // odd content stayed flat however far you turned DRIVE up - the knob
+            // added warmth and nothing else.
+            static constexpr float kDs2MixLo[3] = { 0.0f, 0.16f, 0.14f };
+            static constexpr float kDs2MixHi[3] = { 0.0f, 0.34f, 0.38f };
+            const float kDs2Mix[3] = {
+                0.0f,
+                kDs2MixLo[1] + (kDs2MixHi[1] - kDs2MixLo[1]) * charNorm,
+                kDs2MixLo[2] + (kDs2MixHi[2] - kDs2MixLo[2]) * charNorm };
             if (kDs2Mix[ci] > 0.f)
             {
             // Not saturated at high GAIN, so the top of the knob still has room.
-                const float grind = 0.55f + 0.45f * charNorm + 0.55f * gainTop;
+                const float grind = 0.35f + 1.10f * charNorm + 0.55f * gainTop;
                 const float d = x * (1.f + kDs2Drv[ci]);
                 float c = (d >= 0.f) ? d / (1.f + 0.85f * d)     // asymmetric soft knee...
                                      : d / (1.f - 1.15f * d);
@@ -972,9 +989,20 @@ void PowerAmp::process (float* data, int numSamples,
         // cannot pass DC and the offset would swell notes.
         const float pb   = 0.18f * tubeTemp;
         const float xb   = x + pb;
-        const float sat  = (xb >= 0.f) ? xb / (1.f + pwrKeff * 1.20f * xb * xb)
-                                       : xb / (1.f + pwrKeff * 0.80f * xb * xb);
-        const float satB = pb / (1.f + pwrKeff * 1.20f * pb * pb);
+        // x / sqrt(1 + k x^2), not x / (1 + k x^2).
+        //
+        // The second one is not monotonic: its derivative vanishes at x = 1/sqrt(k)
+        // and beyond that the output FALLS as the input rises - the wave folds back
+        // instead of clipping. With k around 0.3 that turning point is at 1.83, and
+        // while master was an output gain the signal here never got near it. Now
+        // that master drives, 8.5x sails past it, and cranking the amp measured as
+        // LESS distortion: 54.9% THD at master 0.4 against 39.4% at 1.0.
+        //
+        // A tube compresses toward a limit. It does not give back less when you
+        // push it harder. This form has the same knee and asymptotes instead.
+        const float kP   = pwrKeff * ((xb >= 0.f) ? 1.20f : 0.80f);
+        const float sat  = xb / std::sqrt (1.f + kP * xb * xb);
+        const float satB = pb / std::sqrt (1.f + pwrKeff * 1.20f * pb * pb);
         x = sat - satB;
 
         paOvsBuf[n] = x;
