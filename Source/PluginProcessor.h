@@ -753,9 +753,22 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
-    // Convenience wrappers so the editor can call these directly.
-    bool loadIR  (const juce::File& f) { return irSection.loadIRA (f); }
-    bool loadIRB (const juce::File& f) { return irSection.loadIRB (f); }
+    // Convenience wrappers so the editor can call these directly. They also write
+    // the choice to the global cabinet file, so the next instance opens with it.
+    bool loadIR  (const juce::File& f) { const bool ok = irSection.loadIRA (f); rememberIRs(); return ok; }
+    bool loadIRB (const juce::File& f) { const bool ok = irSection.loadIRB (f); rememberIRs(); return ok; }
+
+    // Cabinets the user last had loaded, kept OUTSIDE the session so a fresh
+    // instance is not a bare head. Session state still wins: the constructor
+    // recalls these, and setStateInformation overwrites them if the host has a
+    // saved cab of its own.
+    //
+    // Deliberately paths, not audio. The IRs a player owns are usually someone
+    // else's licensed product - remembering where they are is fine, shipping
+    // copies of them is not.
+    static juce::File globalCabinetFile();
+    void rememberIRs() const;
+    void recallRememberedIRs();
     // Look for a remembered IR whose path no longer resolves: same filename in the
     // last browsed folder, the other IR's folder, or the folder saved with state.
     juce::File relinkIR (const juce::String& savedPath,

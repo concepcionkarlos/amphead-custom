@@ -2300,6 +2300,55 @@ CopilotToneAudioProcessor::CopilotToneAudioProcessor()
         && ! juce::RuntimePermissions::isGranted (juce::RuntimePermissions::recordAudio))
         juce::RuntimePermissions::request (juce::RuntimePermissions::recordAudio,
                                            [] (bool /*granted*/) {});
+
+    // Open with the cabs the player last used. A host with a saved session will
+    // call setStateInformation after this and override it, which is the right
+    // precedence: the session knows better than the default.
+    recallRememberedIRs();
+}
+
+juce::File CopilotToneAudioProcessor::globalCabinetFile()
+{
+    // userApplicationDataDirectory is ~/Library on macOS, not ~/Library/Application
+    // Support - the extra step is what PropertiesFile does internally, and leaving
+    // it out puts the file somewhere nothing else looks.
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+           #if JUCE_MAC
+             .getChildFile ("Application Support")
+           #endif
+             .getChildFile ("AmpHead Custom")
+             .getChildFile ("cabinets.xml");
+}
+
+void CopilotToneAudioProcessor::rememberIRs() const
+{
+    juce::XmlElement xml ("AMPHEADCABS");
+    xml.setAttribute ("a", irSection.irALoaded.load() ? irSection.irAPath : juce::String());
+    xml.setAttribute ("b", irSection.irBLoaded.load() ? irSection.irBPath : juce::String());
+    xml.setAttribute ("dir", lastIRDir);
+
+    const auto f = globalCabinetFile();
+    f.getParentDirectory().createDirectory();
+    xml.writeTo (f);
+}
+
+void CopilotToneAudioProcessor::recallRememberedIRs()
+{
+    const auto f = globalCabinetFile();
+    if (! f.existsAsFile()) return;
+
+    const auto xml = juce::XmlDocument::parse (f);
+    if (xml == nullptr) return;
+
+    const juce::String dir = xml->getStringAttribute ("dir");
+    if (lastIRDir.isEmpty()) lastIRDir = dir;
+
+    // Same relink rules as a saved session: a remembered path breaks for ordinary
+    // reasons, and the filename is usually still findable nearby.
+    if (const juce::File fa = relinkIR (xml->getStringAttribute ("a"), dir); fa.existsAsFile())
+        irSection.loadIRA (fa);
+    if (const juce::File fb = relinkIR (xml->getStringAttribute ("b"), dir); fb.existsAsFile())
+        irSection.loadIRB (fb);
 }
 
 CopilotToneAudioProcessor::~CopilotToneAudioProcessor() {}
