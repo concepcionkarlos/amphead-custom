@@ -861,6 +861,8 @@ CopilotToneAudioProcessorEditor::~CopilotToneAudioProcessorEditor()
 //==============================================================================
 void CopilotToneAudioProcessorEditor::timerCallback()
 {
+    const Layout L = Layout::compute (getWidth(), getHeight());
+
     const int ch = (int) audioProcessor.apvts.getRawParameterValue ("channel")->load();
     for (int i = 0; i < 3; ++i)
         chBtn[i].setToggleState (ch == i, juce::dontSendNotification);
@@ -905,7 +907,7 @@ void CopilotToneAudioProcessorEditor::timerCallback()
     if (chanNow != lastChan)
     {
         lastChan = chanNow;
-        repaint (0, 0, getWidth(), 80);      // the header band
+        repaint (0, 0, getWidth(), L.hdrH);
     }
 
     // Keep the OVERSAMPLING + QUALITY combos mirrored to the shared osFactor.
@@ -931,7 +933,10 @@ void CopilotToneAudioProcessorEditor::timerCallback()
     if (cachedInDb > inPeakHold) { inPeakHold = cachedInDb; inPeakWait = 24; }
     else if (inPeakWait > 0)     { --inPeakWait; }
     else                         { inPeakHold = juce::jmax (-120.f, inPeakHold - 0.5f); }
-    repaint (0, getHeight() - 38, getWidth(), 38);
+    // From Layout, not a literal. This was a hard-coded 38 while barH grew to 58,
+    // so the repaint covered the bottom 38 px of a 58 px bar and the meters - which
+    // sit in the top 16 of it - stopped being redrawn at all.
+    repaint (0, getHeight() - L.barH, getWidth(), L.barH);
 }
 
 void CopilotToneAudioProcessorEditor::setChannelIndex (int idx)
