@@ -86,24 +86,10 @@ void AmpEngine::prepare (double sampleRate, int maxBlockSize)
     // Input front-end coefficients
     cDC    = hpfAlpha (2.f,     fsr);   // DC blocker
     cZHP   = hpfAlpha (7.f,     fsr);   // input impedance coupling cap ~7 Hz
-    // Pickup + cable resonance, RBJ lowpass. 4 H humbucker against ~250 pF - its
-    // own 100 pF plus a short 1.5 m lead - puts the peak at
-    //     1 / (2*pi*sqrt(L*C)) = 5.0 kHz
-    // Q 1.4 gives about +3.4 dB there. A longer cable adds capacitance and drags
-    // this down: 10 m lands near 2.5 kHz, which is why a long lead sounds duller.
-    // Deliberately modelling a SHORT cable - the voicing was tuned with a nearly
-    // flat front end, and a 10 m lead here would darken the whole amp.
-    {
-        const float f0 = 5000.f, Q = 1.4f;
-        const float w0 = juce::MathConstants<float>::twoPi * f0 / fsr;
-        const float cw = std::cos (w0), al = std::sin (w0) / (2.f * Q);
-        const float a0 = 1.f + al;
-        cblB0 = ((1.f - cw) * 0.5f) / a0;
-        cblB1 = ( 1.f - cw)         / a0;
-        cblB2 = cblB0;
-        cblA1 = (-2.f * cw)         / a0;
-        cblA2 = ( 1.f - al)         / a0;
-    }
+    // Built by setCableLength, so prepare and the parameter cannot drift apart.
+    // -1 forces the first design through.
+    cblLenIdx = -1;
+    setCableLength (1);                  // 10 ft, the default
     cHPF   = hpfAlpha (60.f,    fsr);   // input HPF 60 Hz (tighter sub, FM3-style lows)
     cInLP  = lpfCoeff  (16000.f, fsr);   // input LPF 16 kHz
 
@@ -234,6 +220,42 @@ void AmpEngine::reset()
     chkFast = chkSlow = 0.f;
     metLP1 = metLP2 = 0.f;
     fatLP1 = fatLP2 = 0.f;
+}
+
+// Cable lengths a guitarist actually owns. Capacitance is the pickup's own ~100 pF
+// plus roughly 100 pF per metre of lead; against a 4 H humbucker that puts the
+// resonance where the third column says. Q falls with length because a longer cable
+// has more series resistance and more dielectric loss - which is the real reason a
+// long lead sounds dull as well as dark.
+//
+//      3 ft   0.9 m    150 pF    6.5 kHz   Q 1.55
+//     10 ft   3.0 m    400 pF    4.0 kHz   Q 1.40
+//     15 ft   4.6 m    560 pF    3.4 kHz   Q 1.28
+//     20 ft   6.1 m    710 pF    3.0 kHz   Q 1.16
+//     30 ft   9.1 m   1010 pF    2.5 kHz   Q 0.95
+void AmpEngine::setCableLength (int idx)
+{
+    idx = juce::jlimit (0, 4, idx);
+    if (idx == cblLenIdx) return;
+    cblLenIdx = idx;
+
+    static constexpr float kMetres[5] = { 0.9f, 3.0f, 4.6f, 6.1f, 9.1f };
+    static constexpr float kCblQ  [5] = { 1.55f, 1.40f, 1.28f, 1.16f, 0.95f };
+
+    const float L  = 4.0f;                                   // humbucker, henries
+    const float C  = 100e-12f + 100e-12f * kMetres[idx];     // pickup + lead
+    const float f0 = juce::jlimit (500.f, (float) sr * 0.45f,
+                                   1.f / (juce::MathConstants<float>::twoPi
+                                          * std::sqrt (L * C)));
+
+    const float w0 = juce::MathConstants<float>::twoPi * f0 / (float) sr;
+    const float cw = std::cos (w0), al = std::sin (w0) / (2.f * kCblQ[idx]);
+    const float a0 = 1.f + al;
+    cblB0 = ((1.f - cw) * 0.5f) / a0;
+    cblB1 = ( 1.f - cw)         / a0;
+    cblB2 = cblB0;
+    cblA1 = (-2.f * cw)         / a0;
+    cblA2 = ( 1.f - al)         / a0;
 }
 
 // Front-end at native SR -> oversampled V1A + interstage + V1B -> CF at native SR.
@@ -2111,6 +2133,13 @@ CopilotToneAudioProcessor::createParameterLayout()
         juce::NormalisableRange<float> (10.f, 500.f, 1.f), 120.f,
         juce::AudioParameterFloatAttributes().withLabel ("ms")));
 
+    // Guitar cable length. Not a tone control with an invented curve: it sets the
+    // capacitance that resonates against the pickup, which is the actual reason a
+    // long lead sounds duller than a short one.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "cableLen", 1 }, "Cable Length",
+        juce::StringArray { "3 ft", "10 ft", "15 ft", "20 ft", "30 ft" }, 1));
+
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { "reverbType", 1 }, "Reverb Type",
         juce::StringArray { "Spring", "Hall", "Room", "Plate" }, 0));
@@ -2404,6 +2433,7 @@ void CopilotToneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float reverbDecay = apvts.getRawParameterValue ("reverbDecay")->load();
     const float reverbTone  = apvts.getRawParameterValue ("reverbTone")->load();
     const float reverbMix   = apvts.getRawParameterValue ("reverbMix")->load();
+    ampEngine.setCableLength ((int) apvts.getRawParameterValue ("cableLen")->load());
     const bool  revOn       = apvts.getRawParameterValue ("revOn")->load() > 0.5f;
     const bool  dlyOn       = apvts.getRawParameterValue ("dlyOn")->load() > 0.5f;
     const bool  modOn       = apvts.getRawParameterValue ("modOn")->load() > 0.5f;

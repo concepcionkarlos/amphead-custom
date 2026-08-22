@@ -271,6 +271,11 @@ struct AmpEngine
                   float railDroop);   // B+ droop left by the previous block
     void reset();
 
+    // Rebuild the pickup + cable resonance for a cable length. Returns immediately
+    // unless the choice actually moved - the design needs a sin and a cos, which is
+    // not per-block work.
+    void setCableLength (int idx);
+
     // RTNeural integration point. Model members and loadModel() belong here, and
     // process() dispatches to model->forward() for a loaded channel.
     //==============================================================================
@@ -302,6 +307,7 @@ private:
     float cDC    = 0.f;   // DC blocker alpha (~2 Hz)
     float cZHP   = 0.f;   // coupling HPF alpha (~7 Hz)
     float cblB0 = 1.f, cblB1 = 0.f, cblB2 = 0.f, cblA1 = 0.f, cblA2 = 0.f;
+    int   cblLenIdx = -1;                 // cached, so the design only runs on a change
     float cHPF   = 0.f;   // input HPF alpha (60 Hz)
     float cInLP  = 0.f;   // input LP coeff (16 kHz)
     float cTsAtk = 0.f;   // transient smooth attack coeff (0.5 ms)
