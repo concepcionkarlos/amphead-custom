@@ -479,6 +479,14 @@ private:
     float piEnv   = 0.f;                  // phase inverter drive envelope
     float pwrLP   = 0.f;                  // pre-power band-limit LP
     float sagEnv  = 0.f;                  // power supply droop envelope
+
+    // Screen grid. A beam tetrode's screen is fed from the same B+ through a
+    // dropping resistor and has its own, much smaller, filter cap - so it sags
+    // harder and faster than the plate ever does. And screen current is not
+    // proportional to drive: it stays near nothing until the tube is pushed, then
+    // climbs steeply. That is why a cranked amp CHOKES on a big chord and blooms
+    // back, instead of compressing smoothly the way plate sag alone would.
+    float scrEnv = 0.f;
     float nfbLP   = 0.f;                  // NFB low-pass filter state
     float resLP1  = 0.f, resLP2 = 0.f;   // resonance two-pole path
     float postLP1 = 0.f, postLP2 = 0.f;  // anti-fizz two-pole
@@ -488,6 +496,7 @@ private:
     float cPostLP[3] = {};
     float cPiAtk  = 0.f, cPiRel  = 0.f;
     float cSagAtk = 0.f, cSagRel = 0.f;
+    float cScrAtk = 0.f, cScrRel = 0.f;   // screen node: smaller cap, quicker both ways
     float cNFBLP  = 0.f;
     float cResLP  = 0.f;
     float cPresHP = 0.f;

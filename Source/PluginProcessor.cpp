@@ -819,6 +819,10 @@ void PowerAmp::prepare (double sampleRate, int maxBlockSize)
     // Sag: 8 ms attack (supply droops), 250 ms release (cap recharge -> bloom).
     cSagAtk = std::exp (-1.f / (0.008f * sr));
     cSagRel = std::exp (-1.f / (0.250f * sr));
+    // Screen: 2 ms down, 60 ms back. The plate node is 8 / 250 - the screen cap is
+    // a fraction of the reservoir, so it empties and refills far quicker.
+    cScrAtk = std::exp (-1.f / (0.002f * sr));
+    cScrRel = std::exp (-1.f / (0.060f * sr));
 
     // NFB low-pass (~120 Hz) and resonance two-pole LP (~100 Hz).
     cNFBLP = lpfCoeff (120.f, sr);
@@ -860,6 +864,7 @@ void PowerAmp::selectOs (int factor)
 void PowerAmp::reset()
 {
     piEnv = pwrLP = sagEnv = nfbLP = 0.f;
+    scrEnv = 0.f;
     resLP1 = resLP2 = postLP1 = postLP2 = 0.f;
     presHPx = presHPy = 0.f;
     paOsUp.reset();  paOsDown.reset();
@@ -974,14 +979,35 @@ void PowerAmp::process (float* data, int numSamples,
         // both the sag gain and the NFB term. 2.5 only catches the runaway.
         const float sagC = juce::jmin (sagEnv, 2.5f);
 
+        // Screen grid droop. Screen current goes as the square of the drive where
+        // plate current is closer to linear, so the screen gives way abruptly once
+        // the tube is working - that squareness IS the choke. It recovers in 60 ms
+        // against the plate's 250, which is the bloom afterwards.
+        //
+        // Squared, with no threshold. A threshold version measured nothing: the
+        // signal here sits around 0.125, not the ~0.6 I had assumed, so a cubic law
+        // with a 0.10 knee produced 4e-4 and vanished. Worth knowing the operating
+        // level of a node before writing a law that depends on it.
+        {
+            const float ax   = std::abs (x);
+            const float scrI = ax * ax;
+            const float c    = (scrI > scrEnv) ? cScrAtk : cScrRel;
+            scrEnv += (1.f - c) * (scrI - scrEnv);
+        }
+        const float scrC = juce::jmin (scrEnv, 3.0f);
+
         // The same current that drops B+ here drops it everywhere. Hand it to the
         // shared rail; the preamp reads it at the top of the next block, which is
         // well inside the 30 / 320 ms the RC downstream takes to respond anyway.
-        psu.draw (sagC);
+        psu.draw (sagC + 0.4f * scrC);
         // Sag scales with master and with the RECTIFIER type: a tube rectifier has
         // real internal resistance, so B+ drops under draw. Silicon barely sags.
         const float sagScale = (0.50f + 1.15f * master) * rectMul;
         x *= 1.f / (1.f + kSag[ci] * sagScale * sagC);
+
+        // Screens droop on the same rail, so their current belongs to it too.
+        static constexpr float kScreen[3] = { 2.0f, 4.5f, 7.5f };
+        x *= 1.f / (1.f + kScreen[ci] * sagScale * scrC);
 
         // NFB - subtracts LP bass content: tighter at rest, opens when pushed.
         {
