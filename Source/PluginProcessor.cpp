@@ -208,7 +208,8 @@ void AmpEngine::reset()
 
 // Front-end at native SR -> oversampled V1A + interstage + V1B -> CF at native SR.
 void AmpEngine::process (float* data, int numSamples,
-                          float gainNorm, float charNorm, bool brightEnabled, int ci, int factor, float tubeTemp)
+                          float gainNorm, float charNorm, bool brightEnabled, int ci, int factor, float tubeTemp,
+                         float railDroop)
 {
     if (factor != osFactor) selectOs (factor);   // RT-safe: table lookup, no exp
     // Per-channel amp output level calibration, set from measured peak dBFS so all
@@ -313,9 +314,19 @@ void AmpEngine::process (float* data, int numSamples,
     const float pickNorm    = juce::jmin (1.f, pickAtkBlk * 4.f);   // 0-1 normalized pick intensity
 
     // V1A drive: brightness and pick intensity both widen the saturation threshold.
-    const float v1aDrive    = v1aDriveBase * (0.84f + 0.26f * brightRatio + 0.14f * pickNorm);
+    // B+ droop from the shared rail. A lower plate voltage means less gain from
+    // every stage sitting on it, which is why a real amp goes softer under a big
+    // chord and comes back as the reservoir refills - the whole amp breathes, not
+    // just the output stage. Deeper on the high-gain channels: more stages hanging
+    // off the same rail means more of them move when it does.
+    static constexpr float kRail[3] = { 0.06f, 0.13f, 0.20f };
+    const float railGain = 1.f / (1.f + kRail[ci] * juce::jmin (railDroop, 2.5f));
+
+    const float v1aDrive    = v1aDriveBase * railGain
+                            * (0.84f + 0.26f * brightRatio + 0.14f * pickNorm);
     const float v1bPickMod  = 0.90f + 0.18f * brightRatio + 0.08f * pickNorm;
-    const float v1bDriveEff = v1bDrive * (1.f + kPickPush[ci] * pickAtkBlk) * v1bPickMod;
+    const float v1bDriveEff = v1bDrive * railGain
+                            * (1.f + kPickPush[ci] * pickAtkBlk) * v1bPickMod;
 
     // Character knob: scales V1A mid-band asymmetry and the even-harmonic injection.
     const float charIH      = 0.2f + 1.6f * charNorm;   // IH injection scale
@@ -775,7 +786,7 @@ void PowerAmp::reset()
 
 void PowerAmp::process (float* data, int numSamples,
                          float master, float presence,
-                         int ci, int factor, float tubeTemp, float rectMul)
+                         int ci, int factor, float tubeTemp, float rectMul, PowerSupply& psu)
 {
     if (factor != paFactor) selectOs (factor);   // RT-safe: table lookup, no exp
     // Master range: low is tighter, high runs slightly above unity so the output
@@ -881,6 +892,11 @@ void PowerAmp::process (float* data, int numSamples,
         // BOUNDED. Any envelope that touches gain gets a ceiling: this one feeds
         // both the sag gain and the NFB term. 2.5 only catches the runaway.
         const float sagC = juce::jmin (sagEnv, 2.5f);
+
+        // The same current that drops B+ here drops it everywhere. Hand it to the
+        // shared rail; the preamp reads it at the top of the next block, which is
+        // well inside the 30 / 320 ms the RC downstream takes to respond anyway.
+        psu.draw (sagC);
         // Sag scales with master and with the RECTIFIER type: a tube rectifier has
         // real internal resistance, so B+ drops under draw. Silicon barely sags.
         const float sagScale = (0.50f + 1.15f * master) * rectMul;
@@ -2222,6 +2238,7 @@ void CopilotToneAudioProcessor::prepareToPlay (double sampleRate, int samplesPer
                              / juce::jmax (1.f, 0.05f * (float) sampleRate));
     revOnZ = dlyOnZ = modOnZ = 1.f;
     powerAmp.prepare   (sampleRate, samplesPerBlock);
+    supply.prepare     (sampleRate);
     outputTransformer.prepare (sampleRate);
     speakerSim.prepare        (sampleRate);
     reactiveLoad.prepare      (sampleRate);
@@ -2393,11 +2410,13 @@ void CopilotToneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             static constexpr float kMarkTrim = 1.14f;   // level match between the Post and Mark paths
             toneStackEarly.process (data, numSamples, bass, mid, treble, ci);
             for (int n = 0; n < numSamples; ++n) data[n] *= kMarkTrim;
-            ampEngine.process (data, numSamples, gainNorm, charNorm, brightEnabled, ci, factor, tubeTemp);
+            ampEngine.process (data, numSamples, gainNorm, charNorm, brightEnabled, ci, factor, tubeTemp,
+                               supply.preNode);
         }
         else
         {
-            ampEngine.process (data, numSamples, gainNorm, charNorm, brightEnabled, ci, factor, tubeTemp);
+            ampEngine.process (data, numSamples, gainNorm, charNorm, brightEnabled, ci, factor, tubeTemp,
+                               supply.preNode);
             toneStack.process (data, numSamples, bass, mid, treble, ci);
         }
 
@@ -2418,7 +2437,7 @@ void CopilotToneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
         // 3. PowerAmp. Rectifier: silicon is the default (1.0), tube sags harder.
         const float rectMul = apvts.getRawParameterValue ("rectifier")->load() > 0.5f ? 1.75f : 1.0f;
-        powerAmp.process         (data, numSamples, master, presence, ci, factor, tubeTemp, rectMul);
+        powerAmp.process         (data, numSamples, master, presence, ci, factor, tubeTemp, rectMul, supply);
 
         outputTransformer.process (data, numSamples, ci);
 

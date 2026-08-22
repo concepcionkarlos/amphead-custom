@@ -229,11 +229,46 @@ struct TubeThermal
 // AmpEngine - all preamp processing: input front-end (DC block, cable, HPF, LPF,
 // transient smoothing) -> V1A -> interstage -> V1B cold-biased triode -> V1C ->
 // cathode follower. RTNeural would replace all of that with model->forward().
+// Shared B+ rail.
+//
+// A real amp has ONE high-voltage supply feeding everything through a chain of
+// RC filter stages. The power tubes hang off the first node and see the deepest,
+// fastest sag; the preamp sits further down the chain, where the droop is
+// shallower, slower, and lags - it is still falling after the chord has stopped
+// pulling current.
+//
+// Until now every stage sagged on its own signal alone, so nothing the power
+// section did could be felt in the preamp. This is the node they share. The
+// power stage already computes its own draw envelope; this only runs the RC
+// that carries it downstream.
+struct PowerSupply
+{
+    float preNode = 0.f;            // droop seen by the preamp, 0 = full B+
+    float cAtk = 0.f, cRel = 0.f;
+
+    void prepare (double sampleRate)
+    {
+        const float fsr = (float) sampleRate;
+        cAtk = std::exp (-1.f / (0.030f * fsr));    // 30 ms  to follow a draw down
+        cRel = std::exp (-1.f / (0.320f * fsr));    // 320 ms for the reservoir to refill
+        preNode = 0.f;
+    }
+    void reset() noexcept { preNode = 0.f; }
+
+    // Called per sample by the power stage with its (already bounded) draw.
+    inline void draw (float pwrDroop) noexcept
+    {
+        const float c = (pwrDroop > preNode) ? cAtk : cRel;
+        preNode += (1.f - c) * (pwrDroop - preNode);
+    }
+};
+
 struct AmpEngine
 {
     void prepare (double sampleRate, int maxBlockSize);
     void process (float* data, int numSamples, float gainNorm, float charNorm,
-                  bool brightEnabled, int channelIndex, int factor, float tubeTemp);
+                  bool brightEnabled, int channelIndex, int factor, float tubeTemp,
+                  float railDroop);   // B+ droop left by the previous block
     void reset();
 
     // RTNeural integration point. Model members and loadModel() belong here, and
@@ -377,7 +412,8 @@ struct PowerAmp
     void process (float* data, int numSamples,
                   float master, float presence,
                   int channelIndex, int factor, float tubeTemp,
-                  float rectMul);   // 1.0 = silicon, higher = tube rectifier sag
+                  float rectMul,    // 1.0 = silicon, higher = tube rectifier sag
+                  PowerSupply& psu);
     void reset();
 
 private:
@@ -721,6 +757,7 @@ private:
     ReactiveLoad      reactiveLoad;
     SpeakerSim        speakerSim;
     NoiseGate         noiseGate;
+    PowerSupply       supply;      // the B+ rail the preamp and power stage share
     Delay             delay;
     Modulation        modulation;
     ReverbEngine      reverb;
