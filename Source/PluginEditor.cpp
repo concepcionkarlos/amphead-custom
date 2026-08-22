@@ -1097,7 +1097,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
                         Justification::centredLeft);
             g.setColour (CT::textLow);
             g.setFont (Font (FontOptions (CT::fMicro)));
-            g.drawText ("MARK V-CURVE", L.eqPX + 196, L.r2Y + 12, 130, 14,
+            g.drawText ("MARK V-CURVE", L.eqPX + 180, L.r2Y + 12, 130, 14,
                         Justification::centredLeft);
 
             // Response curve behind the faders: the composite magnitude of the five
@@ -1433,12 +1433,15 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
 
             g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
             g.setColour (col);
-            g.drawText (msg, 60, bY + 16, 240, 16, Justification::centredLeft);
+            // Three stacked lines in 46 px: meter, then status, then target. They used
+        // to be placed at +2 / +16 / +27, so the status and the target overlapped
+        // by 5 px.
+        g.drawText (msg, 60, bY + 17, 240, 13, Justification::centredLeft);
 
             // Target reminder, sitting right under the bracket drawn on the meter.
             g.setFont (Font (FontOptions (CT::fMicro)));
             g.setColour (CT::textDim);
-            g.drawText ("TARGET -18 to -12 dB peak", 14, bY + 27, 210, 15, Justification::centredLeft);
+            g.drawText ("TARGET -18 to -12 dB peak", 14, bY + 30, 210, 14, Justification::centredLeft);
         }
 
         // Only shown while output is actually clipping - points at the control
@@ -1491,9 +1494,6 @@ void CopilotToneAudioProcessorEditor::resized()
         for (int i = 0; i < 3; ++i)
             chBtn[i].setBounds (btnAreaLeft + i * (btnW + btnGap), bY, btnW, btnH);
 
-        // BRIGHT - second row below channel buttons, right-aligned with LEAD
-        const int leadBtnX = btnAreaLeft + 2 * (btnW + btnGap);
-        brightBtn.setBounds (leadBtnX, bY + btnH + 5, btnW, 22);
     }
 
     // knob row - three groups instead of eight equal columns.
@@ -1531,8 +1531,15 @@ void CopilotToneAudioProcessorEditor::resized()
         // position under TONE, the rectifier under OUTPUT. They are amp controls,
         // not EQ controls, which is where they used to sit.
         const int cbW = 96, cbH = 20;
+        const int preampCX = 22 + cw;                    // centre of the PREAMP group
         const int toneCX   = 22 + cw * 4 + gap;          // centre of the TONE group
         const int outputCX = 22 + cw * 7 + gap * 2;      // centre of the OUTPUT group
+
+        // BRIGHT belongs here rather than in the header: it is a preamp control,
+        // and this row is now one switch per knob group - bright cap, tone stack
+        // position, rectifier.
+        brightBtn.setBounds (preampCX - cbW / 2, L.topoY + 13, cbW, cbH);
+
         stackPosLabel.setBounds (toneCX   - cbW / 2, L.topoY,      cbW, 12);
         stackPosBox  .setBounds (toneCX   - cbW / 2, L.topoY + 13, cbW, cbH);
         rectLabel    .setBounds (outputCX - cbW / 2, L.topoY,      cbW, 12);
