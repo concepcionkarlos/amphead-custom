@@ -1006,7 +1006,10 @@ void PowerAmp::process (float* data, int numSamples,
         x *= 1.f / (1.f + kSag[ci] * sagScale * sagC);
 
         // Screens droop on the same rail, so their current belongs to it too.
-        static constexpr float kScreen[3] = { 2.0f, 4.5f, 7.5f };
+        // Halved from a first pass at 2.0 / 4.5 / 7.5, which took CRUNCH's pick
+        // dynamics under the 0.18 floor. Screen droop is a texture on the attack,
+        // not another compressor.
+        static constexpr float kScreen[3] = { 1.0f, 2.2f, 3.5f };
         x *= 1.f / (1.f + kScreen[ci] * sagScale * scrC);
 
         // NFB - subtracts LP bass content: tighter at rest, opens when pushed.
