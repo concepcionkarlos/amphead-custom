@@ -161,6 +161,16 @@ void AmpEngine::buildOsTables()
         // Cathode bypass charge and grid conduction, tabled at osr like the rest.
         tCkA[i]     = 1.f - std::exp (-1.f / (0.025f * osr));   // V1A cathode cap ~25 ms
         tCkB[i]     = 1.f - std::exp (-1.f / (0.015f * osr));   // V1B cathode cap ~15 ms
+        // Cathode bypass corner, per channel. A Fender-sized 25 uF on a 1.5k
+        // cathode sits at 4 Hz - fully bypassed, every low kept. A Marshall 0.68 uF
+        // on 820R lands near 285 Hz and throws most of them away before the next
+        // stage. Swapping this cap is most of what a channel relay actually does.
+        tCkFa[i][0] = lpfCoeff ( 25.f, osr);    // CH1 V1A: big cap, keeps its lows
+        tCkFa[i][1] = lpfCoeff (150.f, osr);    // CH2
+        tCkFa[i][2] = lpfCoeff (280.f, osr);    // CH3: small cap, tight
+        tCkFb[i][0] = lpfCoeff ( 40.f, osr);    // CH1 V1B
+        tCkFb[i][1] = lpfCoeff (190.f, osr);    // CH2
+        tCkFb[i][2] = lpfCoeff (330.f, osr);    // CH3
         tGridA[i]   = 1.f - std::exp (-1.f / (0.0015f * osr));  // grid draws current fast
         tGridR[i]   =       std::exp (-1.f / (0.012f  * osr));  // coupling cap recovers ~12 ms
         // The ih DC tracker runs inside the oversampled loop, so its coefficient is
@@ -180,6 +190,7 @@ void AmpEngine::selectOs (int factor)
     cIs2LP = tIs2LP[i];
     osUp.active = tOsLP[i];  osDown.active = tOsLP[i];
     cCkA = tCkA[i];  cCkB = tCkB[i];  cGridAtk = tGridA[i];  cGridRel = tGridR[i];
+    for (int c = 0; c < 3; ++c) { cCkFa[c] = tCkFa[i][c];  cCkFb[c] = tCkFb[i][c]; }
     cBsLPa  = tBsA[i];   cBsLPb = tBsB[i];
     cHmBAtk = tHmA[i];   cHmBRel = tHmR[i];
     cIhDC   = tIhDC[i];
@@ -196,6 +207,7 @@ void AmpEngine::reset()
     cfEnv = 0.f;
     osUp.reset();  osDown.reset();
     ckBiasA = ckBiasB = gridChg = 0.f;
+    ckLPa = ckLPb = 0.f;
     pkFast = pkSlow = pkHPx = pkHPy = 0.f;
     bsLPa = bsLPb = hmBloom = uhLP1 = ihDC = 0.f;
     brightHPx = brightHPy = 0.f;
@@ -319,6 +331,11 @@ void AmpEngine::process (float* data, int numSamples,
     // chord and comes back as the reservoir refills - the whole amp breathes, not
     // just the output stage. Deeper on the high-gain channels: more stages hanging
     // off the same rail means more of them move when it does.
+    // How much gain the stage gives up below its cathode corner. An unbypassed
+    // triode loses roughly half, so these stay well under that.
+    static constexpr float kCkShelfA[3] = { 0.08f, 0.26f, 0.40f };
+    static constexpr float kCkShelfB[3] = { 0.06f, 0.22f, 0.34f };
+
     static constexpr float kRail[3] = { 0.06f, 0.13f, 0.20f };
     const float railGain = 1.f / (1.f + kRail[ci] * juce::jmin (railDroop, 2.5f));
 
@@ -360,6 +377,12 @@ void AmpEngine::process (float* data, int numSamples,
             // this is touch compression. Modelled as GAIN, not DC - DC reads as swell.
             ckBiasA += cCkA * (std::abs (x) - ckBiasA);
             const float ckGainA = 1.f / (1.f + 0.09f * tubeTemp * ckBiasA);
+
+            // The frequency half of the same cap: what it does not bypass runs
+            // through Rk unbypassed and loses gain to local feedback. Subtracting
+            // the lows below the corner IS that shelf.
+            ckLPa += cCkFa[ci] * (x - ckLPa);
+            x -= kCkShelfA[ci] * ckLPa;
 
             const float xd = x * v1aDrive * ckGainA;
 
@@ -475,6 +498,8 @@ void AmpEngine::process (float* data, int numSamples,
 
             // V1B cathode bypass - same mechanism as V1A, shorter time constant.
             ckBiasB += cCkB * (std::abs (x) - ckBiasB);
+            ckLPb += cCkFb[ci] * (x - ckLPb);
+            x -= kCkShelfB[ci] * ckLPb;
             x *= v1bDriveEff / (1.f + 0.07f * tubeTemp * ckBiasB);
             x = (x >= 0.f) ? x / (1.f + kV1Bp[ci] * x)
                             : x / (1.f - kV1Bn[ci] * x);

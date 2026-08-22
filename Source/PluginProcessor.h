@@ -325,6 +325,16 @@ private:
     float ckBiasA = 0.f, ckBiasB = 0.f;   // cathode cap charge, V1A / V1B
     float gridChg = 0.f;                  // coupling-cap charge from grid current
     float cCkA = 0.f, cCkB = 0.f;         // cathode cap time constants
+
+    // Cathode bypass, the FREQUENCY half of it. Rk || Ck is a low shelf, not just
+    // a bias envelope: above 1/(2*pi*Rk*Ck) the cap shorts Rk and the stage runs at
+    // full gain, below it Rk is unbypassed and local feedback takes gain away. That
+    // is how a channel relay tightens the bass before the next gain stage - a big
+    // cap keeps the lows, a small one throws them away. Per channel, because
+    // swapping this cap is most of what switching channels does in a real amp.
+    float ckLPa = 0.f, ckLPb = 0.f;       // the lows the cap does not bypass
+    float cCkFa[3] = {}, cCkFb[3] = {};   // corner, active oversampling factor
+    float tCkFa[4][3] = {}, tCkFb[4][3] = {};
     float cGridAtk = 0.f, cGridRel = 0.f; // grid conduction charge / recovery
     float tCkA[4] = {}, tCkB[4] = {}, tGridA[4] = {}, tGridR[4] = {};
     float cIsHP2x[3] = {}, cIsLP2x = 0.f;  // interstage coefficients at oversampled SR
