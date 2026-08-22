@@ -909,14 +909,24 @@ void PowerAmp::process (float* data, int numSamples,
     // pDrive sits in front of the nonlinear section, makeup takes it back out. In
     // the linear limit that is a no-op; through the tubes it is the whole point.
     // Master changes the tone now, because that is what a master does.
-    const float kMakeup = 1.35f;      // gives back the level the extra drive costs
     // Squared, not linear. A master pot is an audio taper and the power tubes only
     // begin to clip in the top of its travel - at 0.4 an amp is still touch
     // sensitive. Linear here put 3.7x of drive at 0.4 and collapsed LEAD's pick
     // range to a 0.06 ratio, which is not what half a master does.
     //      0.4 -> 1.8x      0.7 -> 4.4x      1.0 -> 8.5x
     const float pDrive  = 0.50f + 8.00f * master * master;
-    const float makeup  = level / pDrive * kMakeup;
+    // A CONSTANT, not level / pDrive.
+    //
+    // Dividing by pDrive kept the linear response identical, which sounded like the
+    // right thing to preserve and was exactly wrong for a volume control. With a
+    // clean preamp the extra drive passes through and the division cancels it; with
+    // GAIN at 8 the power stage saturates, so the drive does NOT come out the other
+    // side - and the division still took its 13 dB off. Measured on LEAD: -24.2 dB
+    // at master 0.2 against -30.4 at 1.0. Turning the amp up made it quieter.
+    //
+    // Fixed makeup instead. The output rises with master until the tubes clip and
+    // then flattens: louder, then louder and dirtier, then just dirtier.
+    const float makeup  = 0.37f;
 
     // Phase inverter drive: the power section's authority, odd harmonics and grind.
     static constexpr float kPiDrive[3] = { 0.18f, 0.50f, 0.78f };
