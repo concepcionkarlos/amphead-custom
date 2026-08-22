@@ -9,16 +9,9 @@
 #include "PluginProcessor.h"
 
 //==============================================================================
-// One source of truth for the window geometry.
-//
-// paint() and resized() used to declare these numbers independently: the same
-// constants, written twice, in two functions that never compare notes. Moving a
-// section meant editing both, and any mismatch showed up as a panel drawn away
-// from the controls it is meant to contain. pH was already being computed by two
-// different formulas that happened to agree.
-//
-// Both functions read this now. Change a number here and the panel and its
-// contents move together.
+// One source of truth for the window geometry. paint() and resized() both read
+// it, so a panel and the controls inside it cannot drift apart. Change a number
+// here and everything that depends on it follows.
 struct Layout
 {
     int W, H;
@@ -48,22 +41,16 @@ struct Layout
         L.W    = w;
         L.H    = h;
         L.hdrH = 80;
-        // Channel buttons. These were computed independently in paint() and in
-        // resized() - the same drift Layout exists to prevent, missed the first time
-        // round. They used to reserve 42 px on the right for a gear icon that was
-        // painted but not interactive; with it gone they end flush with the panels
-        // below, at the same 14 px margin.
+        // Channel buttons. Right-aligned to the same 14 px margin as the panels
+        // below, so the header lines up with the rest of the window.
         L.chW   = 104;
         L.chGap = 4;
         L.chH   = 36;
         L.chY   = (L.hdrH - L.chH) / 2 - 6;
-        // The bar carries FOUR rows: meters, the input status message, the target
-        // reminder, and the version footer. At 46 the last three sat on baselines a
-        // few pixels apart and the target overlapped the footer's rectangle.
+        // Four rows in here: meters, input status, target reminder, version.
         L.barH = 58;
         L.kpY      = L.hdrH + 8;
-        // The panel is as tall as its contents, not a number someone has to keep in
-        // sync: 30 for the group captions, the knob row, then the topology switches.
+        // Height comes from the contents: caption band, knob row, topology row.
         L.knobRowY = L.kpY + 30;
         L.knobRowH = 182;
         L.topoY    = L.knobRowY + L.knobRowH + 2;
@@ -74,9 +61,8 @@ struct Layout
         const int usable = L.W - L.mg * 2;
         const int colGap = 8;
 
-        // Row 2: CABINET | GRAPHIC EQ. Splitting the row is the whole point - a
-        // full-width strip 88 px tall cannot hold a vertical fader. Half the width
-        // and twice the height can.
+        // Row 2: CABINET | GRAPHIC EQ. Split so the EQ panel is tall enough for a
+        // vertical fader - a full-width strip is not.
         L.r2Y  = L.kpY + L.kpH + 8;
         L.r2H  = 160;
         L.cabX = L.mg;

@@ -31,21 +31,9 @@ namespace CT {
 
     static const juce::Colour divider  { 0xff2c3050 };
 
-    // LINE SYSTEM. Two roles, one weight, and nothing else draws a line.
-    //   rim   the edge of a panel
-    //   rule  any divider INSIDE a panel - header underline, column separator,
-    //         knob-group separator, the EQ's 0 dB reference
-    // Before this a panel edge was drawn five different ways (panelRim, panelRim at
-    // 0.85, a near-black 0xff06070e at 1.5 px, a 0xff222440 at 0.7 alpha and 0.8 px,
-    // and divider) and an internal rule came in four alphas. No line carried meaning
-    // because every one of them was a separate decision. Alphas are gone: a line is
-    // one of these two colours at lineW, or it is not a line.
-    // Values chosen by measuring the rendered contrast against the surfaces they
-    // are drawn on, not by eye. The first pass at 0x343954 / 0x262a44 measured
-    // 1.5:1 and 1.3:1 - consistent, and invisible. Below about 1.5:1 a hairline is
-    // not seen, it is inferred.
-    //   rim   2.4 : 1 on a panel face
-    //   rule  1.7 : 1  - present, subordinate to the edge that contains it
+    // Lines. rim = the edge of a panel, rule = any divider inside one. No alphas:
+    // a line is one of these two or it is not a line. Contrast measured against a
+    // panel face - rim 2.4:1, rule 1.7:1. Below ~1.5:1 a hairline is not seen.
     static const juce::Colour rim      { 0xff4d5480 };
     static const juce::Colour rule     { 0xff3a4066 };
     static constexpr float    lineW = 1.0f;
@@ -337,11 +325,9 @@ void AmpLookAndFeel::drawButtonText (juce::Graphics& g,
     const float fs = btn.getHeight() >= 34 ? CT::fChan : CT::fLabel;
     g.setFont (juce::Font (juce::FontOptions (fs, juce::Font::bold)));
 
-    // Honour the colours the button was configured with. This used to be hard-coded
-    // to textHi / textMid, which quietly made twelve setColour calls in the editor
-    // dead - and put MORE contrast on the inactive label (textMid on the dark fill
-    // is 11:1) than on the active one (textHi on accent is 5:1), so an off button
-    // read as the selected one.
+    // Use the colours the button was configured with, not fixed ones: textMid on
+    // the dark fill is 11:1 against textHi on accent at 5:1, so hard-coding those
+    // two makes an off button read brighter than an on one.
     g.setColour (btn.findColour (btn.getToggleState()
                                  ? juce::TextButton::textColourOnId
                                  : juce::TextButton::textColourOffId));
@@ -375,11 +361,9 @@ void AmpLookAndFeel::drawComboBox (juce::Graphics& g, int w, int h,
 
 juce::Font AmpLookAndFeel::getLabelFont (juce::Label& l)
 {
-    // Return what the label was given. This used to force Font::bold on every
-    // label in the editor, which silently overrode fonts set as plain 370 lines
-    // away - the IR filename fields among them - and left no weight axis to build
-    // hierarchy with, because everything was already bold. styleLabel() asks for
-    // bold where bold is wanted.
+    // Return what the label was given. Forcing bold here overrides fonts set
+    // elsewhere and leaves no weight axis for hierarchy; styleLabel asks for bold
+    // where bold is wanted.
     return l.getFont();
 }
 
@@ -483,11 +467,9 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
 
     // BRIGHT toggle (second row in header, under LEAD)
     brightBtn.setLookAndFeel (&laf);
-    // BRIGHT sits in a row with two dropdowns of identical size. Without a caption
-    // of its own it was the odd one out, and the OFF fill (panelFg) against the
-    // combo fill (inputBg) is only 1.4:1 - three dark slabs, one unlabelled. Give it
-    // the same caption-above-control shape as STACK and RECT, and let the button
-    // itself report ON / OFF.
+    // Caption above, control below - same shape as STACK and RECT beside it. The
+    // OFF fill against the combo fill is only 1.4:1, so without the caption it is
+    // just a third dark slab in the row.
     styleLabel (brightLabel, "BRIGHT", CT::fMicro);
     addAndMakeVisible (brightLabel);
     brightBtn.getProperties().set ("onOffCaption", true);
@@ -903,11 +885,9 @@ void CopilotToneAudioProcessorEditor::timerCallback()
     if (irHintLabel.isVisible() == anyIR)
         irHintLabel.setVisible (! anyIR);
 
-    // The active-channel underline is drawn by paint() at y = 53, just BELOW the
-    // channel buttons, so clicking one invalidates the button and not the underline:
-    // the old channel's mark stayed on screen and the new one never appeared.
-    // Watching the parameter here catches host automation too, which a repaint from
-    // the button's own callback would miss.
+    // The channel underline is painted below the buttons, so a click invalidates
+    // the button and not the mark. Watch the parameter instead of the button - it
+    // catches host automation too.
     const int chanNow = (int) audioProcessor.apvts.getRawParameterValue ("channel")->load();
     if (chanNow != lastChan)
     {
@@ -1157,21 +1137,13 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             g.drawText ("MARK V-CURVE", L.eqPX + 180, L.r2Y + 12, 130, 14,
                         Justification::centredLeft);
 
-            // Response curve behind the faders: the composite magnitude of the five
-            // peaking biquads, on the same axis the faders use. Each band's centre
-            // frequency is placed at its own fader and +/-12 dB spans the fader
-            // travel, so the curve and the caps can never disagree.
-            //
-            // The five resonances are not evenly spaced in log f (87.6, 371.7,
-            // 723.4, 1575.9, 4822.9), so a plain log axis would drift the peaks off
-            // their faders. The mapping is piecewise-linear in log f through the
-            // five anchors instead, which pins every peak to its own cap.
-            //
-            // Known limit: the bands are broad (Q = 0.8) and overlap, so their
-            // gains add. Five faders at +12 dB sum to +22.5 dB at 750 Hz, well past
-            // the +/-12 the travel represents. The curve saturates at 13 dB rather
-            // than rescaling, because rescaling would move a single band's peak off
-            // the cap that set it - and the caps are what the player is reading.
+            // Composite magnitude of the five peaking biquads, on the faders' own
+            // axis: +/-12 dB spans the travel. The resonances are not evenly spaced
+            // in log f, so the x mapping is piecewise-linear through the five
+            // anchors - a plain log axis drifts each peak off its own cap.
+            // The bands overlap (Q = 0.8) and add: five at +12 reach +22.5 dB at
+            // 750 Hz. Clamped at 13 rather than rescaled, so a single band's peak
+            // stays on the cap that set it.
             {
                 const float fadeTop  = (float) L.eqFadeY;
                 const float fadeBot  = (float) (L.eqFadeY + L.eqFadeH - 15);
@@ -1362,11 +1334,8 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             panelEdge (g, r, 6.f);
         };
 
-        // A panel title is not a control. This used to fill CT::inputBg, stroke
-        // CT::divider and round the corners at 4 - the exact recipe drawComboBox
-        // uses - so "CABINET", "NOISE GATE" and a 758 px box holding the word "FX"
-        // all read as empty text fields you could click into. Bare text plus a rule
-        // instead, and a step up the scale so a title outranks the labels under it.
+        // Bare text and a rule. Filling a box here is drawComboBox's recipe, and a
+        // title inside that box reads as a text field you can click into.
         const auto drawHdr = [&] (int hx, int hy, int hw, const juce::String& txt)
         {
             g.setFont (Font (FontOptions (CT::fPanel, Font::bold)));

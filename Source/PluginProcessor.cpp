@@ -2104,9 +2104,8 @@ CopilotToneAudioProcessor::createParameterLayout()
             juce::ParameterID { b.first, 1 }, b.second,
             juce::NormalisableRange<float> (-12.f, 12.f, 0.1f), 0.f));
 
-    // Post-FX bypasses. Additive: no existing ID changes, so saved sessions and
-    // automation from before this build still recall exactly as they did. Default
-    // on, which is how the plugin behaved when there was no switch at all.
+    // Post-FX bypasses. Additive - no existing ID changes, so older sessions still
+    // recall the same. Default on.
     for (const auto& b : { std::pair<const char*, const char*> { "revOn", "Reverb On" },
                            { "dlyOn", "Delay On" },
                            { "modOn", "Modulation On" } })
@@ -2446,15 +2445,11 @@ void CopilotToneAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     dlyOnZ += fxOnSm * ((dlyOn ? 1.f : 0.f) - dlyOnZ);
     modOnZ += fxOnSm * ((modOn ? 1.f : 0.f) - modOnZ);
 
-    // Bypass by taking the wet amount to zero rather than by skipping the call.
-    // Skipping would freeze each stage's delay lines and dump a stale tail the
-    // moment it came back; this way the tails decay the way they would anyway.
-    //
-    // MOD OFF zeroes the DETUNE and CHORUS controls, not the whole stage. The
-    // background ensemble inside Modulation has a floor that is on at all times
-    // (bgAmt = 0.15 + 0.85 * detune) because it is part of how the amp sounds, not
-    // an effect the player switched in. Killing it here would change the amp's
-    // voice, which is not what an FX bypass should do.
+    // Bypass by taking the wet amount to zero, not by skipping the call - skipping
+    // freezes the delay lines and dumps a stale tail when it comes back.
+    // MOD OFF zeroes DETUNE and CHORUS only. Modulation's background ensemble has a
+    // floor that is always on (bgAmt = 0.15 + 0.85 * detune); it is part of the
+    // amp's voice, not an effect, so a bypass has no business killing it.
     delay.process      (buffer, numSamples, delayType,  delayTime,   delayFb,
                         delayMix * dlyOnZ);
     modulation.process (buffer, numSamples, modDetune * modOnZ, modChorus * modOnZ,
