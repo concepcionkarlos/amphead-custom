@@ -1,7 +1,7 @@
 /*
   ==============================================================================
     AmpHead Custom  -  PluginEditor.h
-    Window: 1020 x 696
+    Window: 1020 x Layout::idealHeight() - derived from the bands, not fixed
   ==============================================================================
 */
 #pragma once
@@ -47,9 +47,10 @@ struct Layout
         L.W    = w;
         L.H    = h;
         L.hdrH = 80;
-        // 46, not 38: the bar carries two lines - meters, then the target
-        // reminder underneath. At 38 the second line was drawn past the window edge.
-        L.barH = 46;
+        // The bar carries FOUR rows: meters, the input status message, the target
+        // reminder, and the version footer. At 46 the last three sat on baselines a
+        // few pixels apart and the target overlapped the footer's rectangle.
+        L.barH = 58;
         L.kpY      = L.hdrH + 8;
         // The panel is as tall as its contents, not a number someone has to keep in
         // sync: 30 for the group captions, the knob row, then the topology switches.
@@ -168,6 +169,7 @@ private:
     // Header
     juce::TextButton chBtn[3];
     juce::TextButton brightBtn;
+    juce::Label      brightLabel;   // caption, matching STACK and RECT
 
     // Main 8 knobs
     juce::Slider gainSlider,   charSlider,   bassSlider,   midSlider,

@@ -270,10 +270,17 @@ void AmpLookAndFeel::drawButtonBackground (juce::Graphics& g,
     const auto  b = btn.getLocalBounds().toFloat().reduced (0.5f);
     const float r = 6.f;
 
+    // Purple means "in the signal path" on every switch in this editor. BYPASS IR
+    // is the one whose lit state means the opposite, so it lights amber instead -
+    // otherwise the accent colour would mean two contradictory things at once.
+    const bool  warn = (bool) btn.getProperties().getWithDefault ("warnWhenOn", false);
+    const auto  onCol   = warn ? CT::amber : CT::accent;
+    const auto  onColHi = warn ? CT::amber.brighter (0.35f) : CT::accentHi;
+
     if (btn.getToggleState())
     {
-        // Active: solid purple base, subtle top gloss, bright border
-        g.setColour (CT::accent);
+        // Active: solid base, subtle top gloss, bright border
+        g.setColour (onCol);
         g.fillRoundedRectangle (b, r);
 
         // Micro top-gloss highlight
@@ -281,13 +288,13 @@ void AmpLookAndFeel::drawButtonBackground (juce::Graphics& g,
         g.fillRoundedRectangle (b.reduced (2.f).removeFromTop (b.getHeight() * 0.45f), r * 0.65f);
 
         // Bright border
-        g.setColour (CT::accentHi.withAlpha (0.70f));
+        g.setColour (onColHi.withAlpha (0.70f));
         g.drawRoundedRectangle (b, r, 1.2f);
     }
     else
     {
         // Inactive: very dark fill, visible gray border
-        const juce::Colour fill = down ? CT::accent.withAlpha (0.28f)
+        const juce::Colour fill = down ? onCol.withAlpha (0.28f)
                                  : hi  ? CT::panelFg.brighter (0.18f)
                                        : CT::panelFg;
         g.setColour (fill);
@@ -310,10 +317,23 @@ void AmpLookAndFeel::drawButtonText (juce::Graphics& g,
     // makes. drawFittedText shrinks rather than clips, so the larger size is safe.
     const float fs = btn.getHeight() >= 34 ? CT::fChan : CT::fLabel;
     g.setFont (juce::Font (juce::FontOptions (fs, juce::Font::bold)));
-    g.setColour (btn.getToggleState() ? CT::textHi
-                                      : CT::textMid);
-    g.drawFittedText (btn.getButtonText(),
-                      btn.getLocalBounds().reduced (4, 2),
+
+    // Honour the colours the button was configured with. This used to be hard-coded
+    // to textHi / textMid, which quietly made twelve setColour calls in the editor
+    // dead - and put MORE contrast on the inactive label (textMid on the dark fill
+    // is 11:1) than on the active one (textHi on accent is 5:1), so an off button
+    // read as the selected one.
+    g.setColour (btn.findColour (btn.getToggleState()
+                                 ? juce::TextButton::textColourOnId
+                                 : juce::TextButton::textColourOffId));
+
+    // A switch captioned "ON" while it is off cannot be read: it could equally mean
+    // "this is on" or "press to turn it on". These say which of the two it is.
+    juce::String txt = btn.getButtonText();
+    if ((bool) btn.getProperties().getWithDefault ("onOffCaption", false))
+        txt = btn.getToggleState() ? "ON" : "OFF";
+
+    g.drawFittedText (txt, btn.getLocalBounds().reduced (4, 2),
                       juce::Justification::centred, 1);
 }
 
@@ -336,7 +356,12 @@ void AmpLookAndFeel::drawComboBox (juce::Graphics& g, int w, int h,
 
 juce::Font AmpLookAndFeel::getLabelFont (juce::Label& l)
 {
-    return juce::Font (juce::FontOptions (l.getFont().getHeight(), juce::Font::bold));
+    // Return what the label was given. This used to force Font::bold on every
+    // label in the editor, which silently overrode fonts set as plain 370 lines
+    // away - the IR filename fields among them - and left no weight axis to build
+    // hierarchy with, because everything was already bold. styleLabel() asks for
+    // bold where bold is wanted.
+    return l.getFont();
 }
 
 //==============================================================================
@@ -371,7 +396,7 @@ static void styleKnob (juce::Slider& s, AmpLookAndFeel& laf, int tbW = 64)
                            juce::MathConstants<float>::pi * 2.75f, true);
 }
 
-static void styleLabel (juce::Label& l, const juce::String& t, float fs = 9.5f)
+static void styleLabel (juce::Label& l, const juce::String& t, float fs = CT::fMicro)
 {
     l.setText (t, juce::dontSendNotification);
     l.setFont (juce::Font (juce::FontOptions (fs, juce::Font::bold)));
@@ -425,6 +450,14 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
 
     // BRIGHT toggle (second row in header, under LEAD)
     brightBtn.setLookAndFeel (&laf);
+    // BRIGHT sits in a row with two dropdowns of identical size. Without a caption
+    // of its own it was the odd one out, and the OFF fill (panelFg) against the
+    // combo fill (inputBg) is only 1.4:1 - three dark slabs, one unlabelled. Give it
+    // the same caption-above-control shape as STACK and RECT, and let the button
+    // itself report ON / OFF.
+    styleLabel (brightLabel, "BRIGHT", CT::fMicro);
+    addAndMakeVisible (brightLabel);
+    brightBtn.getProperties().set ("onOffCaption", true);
     brightBtn.setButtonText ("BRIGHT");
     brightBtn.setClickingTogglesState (true);
     brightBtn.setColour (juce::TextButton::textColourOffId, CT::textLow);
@@ -480,6 +513,7 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
     gateOnBtn.setLookAndFeel (&laf);
     gateOnBtn.setButtonText ("ON");
     gateOnBtn.setClickingTogglesState (true);
+    gateOnBtn.getProperties().set ("onOffCaption", true);
     gateOnBtn.setColour (juce::TextButton::textColourOffId, CT::textLow);
     gateOnBtn.setColour (juce::TextButton::textColourOnId,  CT::textHi);
     gateOnBtn.setTooltip ("Enable the noise gate (off = fully out of the signal path)");
@@ -543,7 +577,8 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
         {
             fx[i].b.setButtonText ("ON");
             fx[i].b.setClickingTogglesState (true);
-            fx[i].b.setColour (juce::TextButton::textColourOffId, CT::textDim);
+            fx[i].b.getProperties().set ("onOffCaption", true);
+            fx[i].b.setColour (juce::TextButton::textColourOffId, CT::textLow);
             fx[i].b.setColour (juce::TextButton::textColourOnId,  CT::textHi);
             fx[i].b.setTooltip (fx[i].tip);
             fx[i].b.setLookAndFeel (&laf);
@@ -667,6 +702,7 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
     bypIRBtn.setLookAndFeel (&laf);
     bypIRBtn.setButtonText ("BYPASS IR");
     bypIRBtn.setClickingTogglesState (true);
+    bypIRBtn.getProperties().set ("warnWhenOn", true);
     bypIRBtn.setColour (juce::TextButton::textColourOffId, CT::textLow);
     bypIRBtn.setColour (juce::TextButton::textColourOnId,  CT::textHi);
     addAndMakeVisible (bypIRBtn);
@@ -717,9 +753,9 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
     modChorusKnob.setTooltip   ("Background chorus depth");
     modRateKnob.setTooltip     ("Modulation rate");
 
-    styleLabel (reverbLabel, "REVERB", 9.f);
-    styleLabel (delayLabel,  "DELAY",  9.f);
-    styleLabel (modLabel,    "MODULATION", 9.f);
+    styleLabel (reverbLabel, "REVERB", CT::fMicro);
+    styleLabel (delayLabel,  "DELAY",  CT::fMicro);
+    styleLabel (modLabel,    "MODULATION", CT::fMicro);
     for (auto* l : { &reverbLabel, &delayLabel, &modLabel })
     {
         l->setJustificationType (juce::Justification::centredLeft);
@@ -734,7 +770,7 @@ CopilotToneAudioProcessorEditor::CopilotToneAudioProcessorEditor (
     };
     for (auto& f : fxl)
     {
-        styleLabel (f.l, f.t, 8.f);
+        styleLabel (f.l, f.t, CT::fMicro);
         addAndMakeVisible (f.l);
     }
 
@@ -1310,24 +1346,26 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             g.drawRoundedRectangle (r.reduced (0.5f), 6.f, 1.f);
         };
 
+        // A panel title is not a control. This used to fill CT::inputBg, stroke
+        // CT::divider and round the corners at 4 - the exact recipe drawComboBox
+        // uses - so "CABINET", "NOISE GATE" and a 758 px box holding the word "FX"
+        // all read as empty text fields you could click into. Bare text plus a rule
+        // instead, and a step up the scale so a title outranks the labels under it.
         const auto drawHdr = [&] (int hx, int hy, int hw, const juce::String& txt)
         {
-            Rectangle<float> r ((float)(hx + 8), (float)(hy + 8), (float)(hw - 16), 24.f);
-            g.setColour (CT::inputBg);
-            g.fillRoundedRectangle (r, 4.f);
-            g.setColour (CT::divider);
-            g.drawRoundedRectangle (r.reduced (0.5f), 4.f, 1.f);
-            g.setFont (Font (FontOptions (CT::fLabel, Font::bold)));
-            g.setColour (CT::textLow);
-            g.drawText (txt, r.reduced (10.f, 0.f), Justification::centredLeft);
+            g.setFont (Font (FontOptions (CT::fPanel, Font::bold)));
+            g.setColour (CT::textMid);
+            g.drawText (txt, hx + 14, hy + 8, hw - 28, 22, Justification::centredLeft);
+            g.setColour (CT::divider.withAlpha (0.7f));
+            g.fillRect (hx + 14, hy + 32, hw - 28, 1);
         };
 
         drawPanel (L.cabX,  L.r2Y, L.cabW,  L.r2H);
         drawPanel (L.gateX, L.r3Y, L.gateW, L.r3H);
         drawPanel (L.fxX,   L.r3Y, L.fxW,   L.r3H);
 
-        drawHdr (L.cabX,  L.r2Y, L.cabW - 96, "CABINET");     // room for BYPASS IR
-        drawHdr (L.gateX, L.r3Y, L.gateW - 44, "NOISE GATE"); // room for ON
+        drawHdr (L.cabX,  L.r2Y, L.cabW,  "CABINET");
+        drawHdr (L.gateX, L.r3Y, L.gateW, "NOISE GATE");
         drawHdr (L.fxX,   L.r3Y, L.fxW,        "FX");
 
         //--- CABINET -----------------------------------------------------------
@@ -1369,9 +1407,11 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         // MOD switch does not silence the stage: the background ensemble is part of
         // the amp's voice and runs at all times.
         g.setFont (Font (FontOptions (CT::fMicro)));
-        g.setColour (CT::textDim);
+        g.setColour (CT::textLow);
+        // textLow, not textDim: textDim on this panel is 1.8:1, which is texture
+        // rather than words - and this line exists purely to explain something.
         g.drawText ("ENSEMBLE ALWAYS ON",
-                    L.fxX + 20 + colW * 2, L.r3Y + 58, colW - 16, 22,
+                    L.fxX + 20 + colW * 2, L.r3Y + 62, colW - 16, 22,
                     Justification::centredLeft);
 
         // Post FX captions are Labels placed in resized(), not drawn here.
@@ -1394,7 +1434,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         // meters. Only the input meter gets the target bracket - the output meter
         // is about staying under the ceiling, not hitting a window.
         drawLevelMeter (g, { 60,      bY + 2, 170, 14 }, cachedInDb,  inClipHold  > 0, true);
-        drawLevelMeter (g, { W - 235, bY + 2, 170, 14 }, cachedOutDb, outClipHold > 0, false);
+        drawLevelMeter (g, { W - 248, bY + 2, 170, 14 }, cachedOutDb, outClipHold > 0, false);
 
         // Right of the output meter: the OUTPUT label, which becomes a CLIP badge
         // while the clip hold is active. It sits clear of the meter, which ends at
@@ -1404,14 +1444,14 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             g.setColour (Colour (0xffef4444));
             g.fillRoundedRectangle ((float) (W - 58), (float) (bY + 3), 34.f, 12.f, 2.f);
             g.setColour (Colours::white);
-            g.setFont (Font (FontOptions (8.f, Font::bold)));
+            g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
             g.drawText ("CLIP", W - 60, bY + 1, 38, 16, Justification::centred);
         }
         else
         {
             g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
             g.setColour (CT::textLow);
-            g.drawText ("OUTPUT", W - 64, bY + 2, 54, 16, Justification::centredLeft);
+            g.drawText ("OUTPUT", W - 72, bY + 2, 58, 16, Justification::centredLeft);
         }
 
         // Live gain-staging readout under the INPUT meter. Run too hot and the
@@ -1436,12 +1476,12 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
             // Three stacked lines in 46 px: meter, then status, then target. They used
         // to be placed at +2 / +16 / +27, so the status and the target overlapped
         // by 5 px.
-        g.drawText (msg, 60, bY + 17, 240, 13, Justification::centredLeft);
+        g.drawText (msg, 60, bY + 20, 240, 14, Justification::centredLeft);
 
             // Target reminder, sitting right under the bracket drawn on the meter.
             g.setFont (Font (FontOptions (CT::fMicro)));
             g.setColour (CT::textDim);
-            g.drawText ("TARGET -18 to -12 dB peak", 14, bY + 30, 210, 14, Justification::centredLeft);
+            g.drawText ("TARGET -18 to -12 dB peak", 14, bY + 38, 210, 14, Justification::centredLeft);
         }
 
         // Only shown while output is actually clipping - points at the control
@@ -1450,7 +1490,7 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         {
             g.setFont (Font (FontOptions (CT::fMicro, Font::bold)));
             g.setColour (Colour (0xffef4444));
-            g.drawText ("lower OUTPUT", W - 235, bY + 16, 170, 16, Justification::centredRight);
+            g.drawText ("lower OUTPUT", W - 248, bY + 18, 170, 16, Justification::centredRight);
         }
 
         // OVERSAMPLING / QUALITY labels
@@ -1458,14 +1498,19 @@ void CopilotToneAudioProcessorEditor::paint (juce::Graphics& g)
         g.setColour (CT::textDim);
         // Right-aligned to end just before each combo starts. They used to overlap
         // their own dropdowns: OVERSAMPLING showed as "NG" and QUALITY not at all.
-        g.drawText ("OVERSAMPLING", W / 2 - 230, bY + 2, 108, 16, Justification::centredRight);
-        g.drawText ("QUALITY",      W / 2 - 20,  bY + 2, 74,  16, Justification::centredRight);
+        // bY + 7 with height 20 matches the combos' own rectangle, so label and box
+        // share a centre line. At bY + 2 they floated 8 px above their own control.
+        g.drawText ("OVERSAMPLING", W / 2 - 232, bY + 7, 108, 20, Justification::centredRight);
+        g.drawText ("QUALITY",      W / 2 - 22,  bY + 7, 74,  20, Justification::centredRight);
 
         // version footer text
         g.setFont (Font (FontOptions (CT::fMicro)));
         g.setColour (CT::textDim);
+        // Right-aligned rather than centred across the full width: centred, its
+        // rectangle spanned the whole bar and overlapped the TARGET line by 11 px.
+        // Only the justification was keeping the two strings' ink apart.
         g.drawText ("AmpHead Custom by JCConcepcion v0.1.0  -  PROTOTYPE",
-                    0, bY + barH - 13, W, 11, Justification::centred);
+                    W - 320, bY + barH - 16, 306, 12, Justification::centredRight);
     }
 
 }
@@ -1538,7 +1583,8 @@ void CopilotToneAudioProcessorEditor::resized()
         // BRIGHT belongs here rather than in the header: it is a preamp control,
         // and this row is now one switch per knob group - bright cap, tone stack
         // position, rectifier.
-        brightBtn.setBounds (preampCX - cbW / 2, L.topoY + 13, cbW, cbH);
+        brightLabel.setBounds (preampCX - cbW / 2, L.topoY,      cbW, 12);
+        brightBtn  .setBounds (preampCX - cbW / 2, L.topoY + 13, cbW, cbH);
 
         stackPosLabel.setBounds (toneCX   - cbW / 2, L.topoY,      cbW, 12);
         stackPosBox  .setBounds (toneCX   - cbW / 2, L.topoY + 13, cbW, cbH);
@@ -1549,14 +1595,13 @@ void CopilotToneAudioProcessorEditor::resized()
 
     // graphic EQ - right half of row 2
     {
-        const int btnW = 54;
         for (int i = 0; i < 5; ++i)
         {
             const int cx = L.eqX0 + i * L.eqBandW;
             eqLabel [i].setBounds (cx, L.r2Y + 34, L.eqBandW, 14);
             eqSlider[i].setBounds (cx + L.eqBandW / 2 - 26, L.eqFadeY, 52, L.eqFadeH);
         }
-        eqOnBtn.setBounds (L.eqPX + L.eqPW - btnW - 14, L.r2Y + 8, btnW, 24);
+        eqOnBtn.setBounds (L.eqPX + L.eqPW - 70, L.r2Y + 8, 56, 24);
     }
     // CABINET - row 2, left
     {
@@ -1582,7 +1627,7 @@ void CopilotToneAudioProcessorEditor::resized()
         gateThreshLabel  .setBounds (L.gateX + 9,       kY + kH + 2,  kW, lH);
         gateReleaseSlider.setBounds (L.gateX + 17 + kW, kY,           kW, kH);
         gateReleaseLabel .setBounds (L.gateX + 17 + kW, kY + kH + 2,  kW, lH);
-        gateOnBtn        .setBounds (L.gateX + L.gateW - 46, L.r3Y + 10, 38, 20);
+        gateOnBtn        .setBounds (L.gateX + L.gateW - 70, L.r3Y + 8, 56, 24);
     }
 
     // FX - row 3, right. Three columns side by side instead of three stacked
@@ -1598,11 +1643,17 @@ void CopilotToneAudioProcessorEditor::resized()
         {
             const int cx    = L.fxX + 12 + colW * ci;
             const int inner = colW - 16;
-            cap.setBounds (cx + 8, L.r3Y + 44, inner - 40, 12);
-            if (box != nullptr) box->setBounds (cx + 8, L.r3Y + 58, inner, 22);
-            onBtn.setBounds (cx + 8 + inner - 36, L.r3Y + 41, 36, 18);
+            // Caption stops 8 px short of the switch beside it; the switch clears
+            // the type box below it by 8. Every gap in this column is 8.
+            cap.setBounds (cx + 8, L.r3Y + 36, inner - 64, 12);
+            if (box != nullptr) box->setBounds (cx + 8, L.r3Y + 62, inner, 22);
+            // 56 x 24, the same as every other bypass switch. At 36 x 18 these were
+            // the smallest targets in the window while carrying the same decision.
+            // r3Y + 30 keeps 4 px clear of the combo at r3Y + 58; at + 41 the two
+            // shared a pixel row and the combo painted over the button's border.
+            onBtn.setBounds (cx + 8 + inner - 56, L.r3Y + 30, 56, 24);
 
-            const int kSz = 42, kY = L.r3Y + 88;
+            const int kSz = 42, kY = L.r3Y + 92;
             juce::Slider* ks[3] = { &k0, &k1, &k2 };
             juce::Label*  ls[3] = { &l0, &l1, &l2 };
             for (int j = 0; j < 3; ++j)
